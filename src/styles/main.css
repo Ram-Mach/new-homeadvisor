@@ -1,0 +1,13 @@
+@import url('https://fonts.googleapis.com/css2?family=Heebo:wght@300;400;500;700;800&display=swap');
+
+/* Bridge Vuetify's theme variables to the root document so the page
+   background and text color match the active theme outside .v-application,
+   and native browser widgets (scrollbars, inputs) render in the right mode. */
+html,
+body {
+  font-family: 'Heebo', sans-serif;
+  /* background-color: rgb(var(--v-theme-background)) !important; */
+  /* color: rgba(var(--v-theme-on-background), var(--v-high-emphasis-opacity)) !important; */
+  /* color-scheme: light dark; */
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
