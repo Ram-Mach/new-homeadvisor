@@ -43,7 +43,7 @@
         :key="file.id"
         cols="12" sm="6" md="4" lg="3"
       >
-        <v-card rounded="xl" elevation="0" color="surface-variant" class="pa-4" hover>
+        <v-card rounded="xl" elevation="0"   class="pa-4" hover>
           <div class="d-flex align-center ga-3 mb-3">
             <v-icon :icon="file.icon" :color="file.color" size="32" />
             <div style="min-width:0">

@@ -51,19 +51,19 @@
 
     <v-row>
       <v-col cols="12" sm="4">
-        <v-card rounded="xl" elevation="0" color="surface-variant" class="pa-4">
+        <v-card rounded="xl" elevation="0" class="pa-4">
           <div class="text-caption text-medium-emphasis">סה"כ פריטים</div>
           <div class="text-h5 font-weight-bold">{{ items.length }}</div>
         </v-card>
       </v-col>
       <v-col cols="12" sm="4">
-        <v-card rounded="xl" elevation="0" color="surface-variant" class="pa-4">
+        <v-card rounded="xl" elevation="0" class="pa-4">
           <div class="text-caption text-medium-emphasis">עלות כוללת</div>
           <div class="text-h5 font-weight-bold">{{ currency(totalCost) }}</div>
         </v-card>
       </v-col>
       <v-col cols="12" sm="4">
-        <v-card rounded="xl" elevation="0" color="surface-variant" class="pa-4">
+        <v-card rounded="xl" elevation="0" class="pa-4">
           <div class="text-caption text-medium-emphasis">מחיר ממוצע לסעיף</div>
           <div class="text-h5 font-weight-bold">{{ currency(avgCost) }}</div>
         </v-card>

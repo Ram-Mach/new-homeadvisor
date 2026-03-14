@@ -57,11 +57,15 @@ const route = useRoute();
 
 const routeTitles = {
   'org-dashboard': 'דשבורד ארגוני',
+  'project-planner': 'מתכנן פרויקט חדש',
   'team': 'צוות',
   'subscription': 'מנוי',
   'profile': 'פרופיל',
   'organization-settings': 'הגדרות מערכת',
   'project-dashboard': 'דשבורד פרויקט',
+  'project-timeline': 'לוח זמנים',
+  'project-shopping-list': 'רשימת קניות',
+  'project-quality-checklist': 'בקרת איכות',
   'project-budget': 'תקציב',
   'project-expenses': 'הוצאות',
   'project-team': 'צוות פרויקט',

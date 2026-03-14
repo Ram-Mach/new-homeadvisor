@@ -5,7 +5,7 @@
     <!-- Summary stat cards -->
     <v-row class="mb-6">
       <v-col v-for="stat in stats" :key="stat.label" cols="6" lg="3">
-        <v-card rounded="xl" elevation="0" color="surface-variant" class="pa-4">
+        <v-card rounded="xl" elevation="0"  class="pa-4">
           <v-icon :icon="stat.icon" :color="stat.color" size="24" class="mb-2" />
           <div class="text-h5 font-weight-bold">{{ stat.value }}</div>
           <div class="text-caption text-medium-emphasis">{{ stat.label }}</div>
@@ -28,7 +28,7 @@
               :color="phase.color"
               rounded
               height="8"
-              bg-color="surface-variant"
+             
             />
           </div>
         </v-card>

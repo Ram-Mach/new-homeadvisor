@@ -36,7 +36,7 @@
               <span>{{ usage.label }}</span>
               <span>{{ usage.current }} / {{ usage.limit }}</span>
             </div>
-            <v-progress-linear :model-value="usage.pct" :color="usage.pct > 85 ? 'error' : 'primary'" height="6" rounded bg-color="surface-variant" />
+            <v-progress-linear :model-value="usage.pct" :color="usage.pct > 85 ? 'error' : 'primary'" height="6" rounded   />
           </div>
         </v-card>
       </v-col>

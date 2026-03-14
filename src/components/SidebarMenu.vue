@@ -64,6 +64,12 @@ const globalLinks = computed(() => [
     roles: allRoles,
   },
   {
+    title: 'תכנון פרויקט חדש',
+    icon: 'mdi-map-marker-path',
+    to: '/plan-new-project',
+    roles: ['super_admin', 'Homeowner', 'ProjectManager'],
+  },
+  {
     title: 'צוות',
     icon: 'mdi-account-group-outline',
     to: '/team',
@@ -101,6 +107,24 @@ const projectLinks = computed(() => [
     icon: 'mdi-cash-multiple',
     to: (id) => `/project/${id}/budget`,
     roles: ['super_admin', 'Homeowner', 'Designer', 'Architect', 'ProjectManager'],
+  },
+  {
+    title: 'לוח זמנים',
+    icon: 'mdi-timeline-clock-outline',
+    to: (id) => `/project/${id}/timeline`,
+    roles: ['super_admin', 'Homeowner', 'ProjectManager'],
+  },
+  {
+    title: 'רשימת קניות',
+    icon: 'mdi-cart-variant',
+    to: (id) => `/project/${id}/shopping-list`,
+    roles: ['super_admin', 'Homeowner', 'ProjectManager'],
+  },
+  {
+    title: 'בקרת איכות',
+    icon: 'mdi-clipboard-check-outline',
+    to: (id) => `/project/${id}/quality`,
+    roles: ['super_admin', 'Homeowner', 'ProjectManager'],
   },
   {
     title: 'הוצאות',

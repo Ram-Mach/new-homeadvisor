@@ -6,7 +6,7 @@
     <!-- Stat cards -->
     <v-row class="mb-6">
       <v-col v-for="stat in stats" :key="stat.label" cols="12" sm="6" lg="3">
-        <v-card rounded="xl" elevation="0" color="surface-variant" class="pa-5">
+        <v-card rounded="xl" elevation="0"   class="pa-5">
           <div class="d-flex align-center justify-space-between mb-3">
             <v-icon :icon="stat.icon" :color="stat.color" size="28" />
             <v-chip :color="stat.color" variant="tonal" size="x-small">{{ stat.trend }}</v-chip>

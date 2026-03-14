@@ -55,7 +55,7 @@
           cols="12"
           sm="4"
         >
-          <v-card rounded="xl" elevation="0" color="surface-variant" class="pa-5 text-right">
+          <v-card rounded="xl" elevation="0"   class="pa-5 text-right">
             <v-icon :icon="feature.icon" color="primary" size="36" class="mb-3" />
             <div class="text-subtitle-1 font-weight-semibold mb-1">{{ feature.title }}</div>
             <div class="text-body-2 text-medium-emphasis">{{ feature.description }}</div>

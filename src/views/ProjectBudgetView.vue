@@ -9,7 +9,7 @@
 
     <v-row class="mb-6">
       <v-col cols="12" sm="4">
-        <v-card rounded="xl" elevation="0" color="surface-variant" class="pa-5">
+        <v-card rounded="xl" elevation="0"   class="pa-5">
           <div class="text-caption text-medium-emphasis mb-1">תקציב כולל</div>
           <div class="text-h5 font-weight-bold">{{ formatCurrency(totalBudget) }}</div>
         </v-card>
@@ -33,7 +33,7 @@
         <span class="text-body-2">ניצול תקציב כולל</span>
         <span class="text-body-2 font-weight-bold">{{ overallUsage }}%</span>
       </div>
-      <v-progress-linear :model-value="overallUsage" color="primary" height="12" rounded bg-color="surface-variant" />
+      <v-progress-linear :model-value="overallUsage" color="primary" height="12" rounded   />
     </v-card>
 
     <v-card rounded="xl" elevation="0" class="pa-5">
