@@ -48,8 +48,24 @@
           />
 
           <v-btn type="submit" color="primary" block size="large" rounded="lg">
+            <v-progress-circular
+              v-if="isSubmitting"
+              indeterminate
+              size="18"
+              width="2"
+              class="me-2"
+            />
             צור חשבון
           </v-btn>
+
+          <v-alert
+            v-if="errorMessage"
+            type="error"
+            variant="tonal"
+            class="mt-4"
+          >
+            {{ errorMessage }}
+          </v-alert>
         </v-form>
 
         <div class="text-center mt-5 text-body-2">
@@ -63,16 +79,20 @@
 
 <script setup>
 import { reactive, ref } from 'vue';
-import { RouterLink } from 'vue-router';
+import { RouterLink, useRouter } from 'vue-router';
+import { useAuthStore } from '../stores/auth';
 
 const showPassword = ref(false);
+const isSubmitting = ref(false);
+const errorMessage = ref('');
+const router = useRouter();
+const authStore = useAuthStore();
 
 const roles = [
   'Homeowner',
   'Designer',
   'Architect',
   'ProjectManager',
-  'Contractor',
 ];
 
 const form = reactive({
@@ -82,8 +102,34 @@ const form = reactive({
   password: '',
 });
 
-const onSubmit = () => {
-  // Placeholder submit handler until registration API is connected.
-  console.log('Register form submitted', { ...form });
+const onSubmit = async () => {
+  isSubmitting.value = true;
+  errorMessage.value = '';
+
+  try {
+    await authStore.register({
+      name: form.fullName,
+      email: form.email,
+      password: form.password,
+      role: form.role,
+    });
+
+    if (authStore.isAuthenticated) {
+      await router.push({ name: 'org-dashboard' });
+      return;
+    }
+
+    await router.push({ name: 'login' });
+  } catch (error) {
+    const validationErrors = error?.response?.data?.errors;
+    if (validationErrors) {
+      const firstField = Object.keys(validationErrors)[0];
+      errorMessage.value = validationErrors[firstField]?.[0] || 'ההרשמה נכשלה. נסו שוב.';
+    } else {
+      errorMessage.value = error?.response?.data?.message || 'ההרשמה נכשלה. נסו שוב.';
+    }
+  } finally {
+    isSubmitting.value = false;
+  }
 };
 </script>

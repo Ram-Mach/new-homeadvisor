@@ -1,4 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router';
+import pinia from '../stores';
+import { useAuthStore } from '../stores/auth';
 
 const LandingHomeView = () => import('../views/LandingHomeView.vue');
 const LoginView = () => import('../views/LoginView.vue');
@@ -166,12 +168,18 @@ const router = createRouter({
 });
 
 router.beforeEach((to, from, next) => {
-  // Placeholder authentication guard.
-  // Replace this with token validation or session store checks.
-  const isAuthenticated = true;
+  const authStore = useAuthStore(pinia);
+  authStore.hydrateFromStorage();
+
+  const isAuthenticated = authStore.isAuthenticated;
 
   if (to.meta.requiresAuth && !isAuthenticated) {
-    next({ name: 'landing-home' });
+    next({ name: 'login' });
+    return;
+  }
+
+  if ((to.name === 'login' || to.name === 'register') && isAuthenticated) {
+    next({ name: 'org-dashboard' });
     return;
   }
 

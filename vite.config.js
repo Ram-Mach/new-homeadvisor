@@ -9,5 +9,12 @@ export default defineConfig({
     port: 5175,
     strictPort: true,
     https: true,
+    proxy: {
+      '/api': {
+        target: 'https://api.homeadvisor.co.il',
+        changeOrigin: true,
+        secure: true,
+      },
+    },
   },
 });

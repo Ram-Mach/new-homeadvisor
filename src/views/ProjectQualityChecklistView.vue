@@ -7,6 +7,12 @@
 
     <v-row>
       <v-col cols="12" md="8">
+        <v-alert v-if="errorMessage" type="error" variant="tonal" class="mb-3">
+          {{ errorMessage }}
+        </v-alert>
+        <div v-if="isLoading" class="py-8 d-flex justify-center">
+          <v-progress-circular indeterminate color="primary" />
+        </div>
         <v-expansion-panels variant="accordion">
           <v-expansion-panel
             v-for="phase in checklistPhases"
@@ -19,9 +25,11 @@
                 v-for="item in phase.items"
                 :key="item.id"
                 v-model="item.done"
+                :disabled="isSaving"
                 :label="item.label"
                 hide-details
                 class="mb-2"
+                @update:model-value="(nextValue) => onToggleItem(phase.id, item, nextValue)"
               />
             </v-expansion-panel-text>
           </v-expansion-panel>
@@ -56,45 +64,126 @@
 </template>
 
 <script setup>
-import { computed, reactive } from 'vue';
+import { computed, onMounted, ref } from 'vue';
+import { useRoute } from 'vue-router';
+import { makeRequest } from '../plugins/api';
 
-const checklistPhases = reactive([
-  {
-    id: 1,
-    title: 'שלב תשתיות',
-    owner: 'מנהל פרויקט',
-    items: [
-      { id: 'infra-1', label: 'בדיקת לחץ מים בוצעה ותועדה', done: true },
-      { id: 'infra-2', label: 'בדיקת לוח חשמל ואבטחה בוצעה', done: false },
-      { id: 'infra-3', label: 'צילום צנרת לפני סגירה נשמר בתיק פרויקט', done: false },
-    ],
-  },
-  {
-    id: 2,
-    title: 'שלב ריצוף וחיפוי',
-    owner: 'מפקח איכות',
-    items: [
-      { id: 'tile-1', label: 'בדיקת מפלסים והתאמה לתוכנית', done: true },
-      { id: 'tile-2', label: 'בדיקת רובה ואחידות מרווחים', done: false },
-      { id: 'tile-3', label: 'אישור בעל הבית על דוגמת החיפוי', done: true },
-    ],
-  },
-  {
-    id: 3,
-    title: 'שלב גמר ומסירה',
-    owner: 'בעל הבית',
-    items: [
-      { id: 'finish-1', label: 'בדיקת פתיחה/סגירה של דלתות וארונות', done: false },
-      { id: 'finish-2', label: 'בדיקת גופי תאורה ושקעים', done: false },
-      { id: 'finish-3', label: 'תיעוד ליקויים ותוכנית תיקון', done: false },
-    ],
-  },
-]);
+const route = useRoute();
 
-const totalChecks = computed(() => checklistPhases
+const checklistPhases = ref([]);
+const isLoading = ref(false);
+const isSaving = ref(false);
+const errorMessage = ref('');
+
+const projectId = computed(() => route.params.id);
+
+const toItems = (response) => {
+  if (Array.isArray(response)) {
+    return response;
+  }
+
+  if (Array.isArray(response?.data)) {
+    return response.data;
+  }
+
+  return [];
+};
+
+const checklistEndpoints = (id) => [
+  `/projects/${id}/checklists`,
+  `/projects/${id}/project-checklists`,
+];
+
+const checklistItemUpdateEndpoints = (id, checklistId, itemId) => [
+  `/projects/${id}/checklists/${checklistId}/items/${itemId}`,
+  `/projects/${id}/checklists/${checklistId}/checklist-items/${itemId}`,
+];
+
+const mapChecklist = (checklist) => ({
+  id: checklist.id,
+  title: checklist.title || 'צ׳קליסט ללא כותרת',
+  owner: checklist.owner_name || 'לא הוגדר',
+  items: (Array.isArray(checklist.items) ? checklist.items : []).map((item) => ({
+    id: item.id,
+    label: item.label || 'סעיף ללא תיאור',
+    done: Boolean(item.is_done),
+  })),
+});
+
+const loadChecklists = async () => {
+  if (!projectId.value) {
+    checklistPhases.value = [];
+    return;
+  }
+
+  isLoading.value = true;
+  errorMessage.value = '';
+
+  try {
+    let loaded = false;
+
+    for (const endpoint of checklistEndpoints(projectId.value)) {
+      try {
+        const response = await makeRequest(endpoint);
+        checklistPhases.value = toItems(response).map(mapChecklist);
+        loaded = true;
+        break;
+      } catch (error) {
+        if (error?.response?.status !== 404) {
+          throw error;
+        }
+      }
+    }
+
+    if (!loaded) {
+      checklistPhases.value = [];
+    }
+  } catch {
+    errorMessage.value = 'טעינת רשימות הבדיקה נכשלה.';
+    checklistPhases.value = [];
+  } finally {
+    isLoading.value = false;
+  }
+};
+
+const updateChecklistItem = async (checklistId, itemId, nextValue) => {
+  for (const endpoint of checklistItemUpdateEndpoints(projectId.value, checklistId, itemId)) {
+    try {
+      await makeRequest(endpoint, { is_done: nextValue ? 1 : 0 }, 'PATCH');
+      return true;
+    } catch (error) {
+      if (error?.response?.status !== 404) {
+        return false;
+      }
+    }
+  }
+
+  return false;
+};
+
+const onToggleItem = async (checklistId, item, nextValue) => {
+  const previous = item.done;
+  item.done = nextValue;
+  isSaving.value = true;
+
+  const success = await updateChecklistItem(checklistId, item.id, nextValue);
+
+  if (!success) {
+    item.done = previous;
+    errorMessage.value = 'עדכון סעיף בדיקה נכשל. נסו שוב.';
+  } else {
+    errorMessage.value = '';
+  }
+
+  isSaving.value = false;
+};
+
+onMounted(loadChecklists);
+
+const totalChecks = computed(() => checklistPhases.value
   .reduce((acc, phase) => acc + phase.items.length, 0));
 
-const completedChecks = computed(() => checklistPhases
+const completedChecks = computed(() => checklistPhases.value
   .reduce((acc, phase) => acc + phase.items.filter((item) => item.done).length, 0));
 
 const completionRate = computed(() => {

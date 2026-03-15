@@ -37,8 +37,24 @@
           />
 
           <v-btn type="submit" color="primary" block size="large" rounded="lg">
+            <v-progress-circular
+              v-if="isSubmitting"
+              indeterminate
+              size="18"
+              width="2"
+              class="me-2"
+            />
             התחבר
           </v-btn>
+
+          <v-alert
+            v-if="errorMessage"
+            type="error"
+            variant="tonal"
+            class="mt-4"
+          >
+            {{ errorMessage }}
+          </v-alert>
         </v-form>
 
         <div class="text-center mt-5 text-body-2">
@@ -52,9 +68,14 @@
 
 <script setup>
 import { reactive, ref } from 'vue';
-import { RouterLink } from 'vue-router';
+import { RouterLink, useRouter } from 'vue-router';
+import { useAuthStore } from '../stores/auth';
 
 const showPassword = ref(false);
+const isSubmitting = ref(false);
+const errorMessage = ref('');
+const router = useRouter();
+const authStore = useAuthStore();
 
 const form = reactive({
   email: '',
@@ -62,8 +83,23 @@ const form = reactive({
   remember: true,
 });
 
-const onSubmit = () => {
-  // Placeholder submit handler until authentication API is connected.
-  console.log('Login form submitted', { ...form });
+const onSubmit = async () => {
+  isSubmitting.value = true;
+  errorMessage.value = '';
+
+  try {
+    await authStore.login({
+      email: form.email,
+      password: form.password,
+      remember: form.remember,
+    });
+
+    await router.push({ name: 'org-dashboard' });
+  } catch (error) {
+    const serverMessage = error?.response?.data?.message;
+    errorMessage.value = serverMessage || 'ההתחברות נכשלה. בדקו אימייל וסיסמה ונסו שוב.';
+  } finally {
+    isSubmitting.value = false;
+  }
 };
 </script>

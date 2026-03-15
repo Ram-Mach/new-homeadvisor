@@ -3,14 +3,21 @@
     <div class="d-flex align-center justify-space-between mb-6">
       <div class="text-h5 font-weight-bold">ניהול קבצי פרויקט</div>
       <div class="d-flex ga-2">
-        <v-btn color="primary" prepend-icon="mdi-folder-plus-outline" rounded="lg" variant="tonal" @click="folderDialog = true">
+        <v-btn color="primary" prepend-icon="mdi-folder-plus-outline" rounded="lg" variant="tonal" :disabled="isSaving" @click="folderDialog = true">
           תיקיה חדשה
         </v-btn>
-        <v-btn color="primary" prepend-icon="mdi-upload" rounded="lg" @click="uploadDialog = true">
+        <v-btn color="primary" prepend-icon="mdi-upload" rounded="lg" :disabled="isSaving" @click="uploadDialog = true">
           העלאת קובץ
         </v-btn>
       </div>
     </div>
+
+    <v-alert v-if="errorMessage" type="error" variant="tonal" class="mb-4">
+      {{ errorMessage }}
+    </v-alert>
+    <v-alert v-if="successMessage" type="success" variant="tonal" class="mb-4">
+      {{ successMessage }}
+    </v-alert>
 
     <v-row class="mb-4">
       <v-col cols="12" sm="5">
@@ -37,6 +44,10 @@
       </v-col>
     </v-row>
 
+    <div v-if="isLoading" class="py-8 d-flex justify-center">
+      <v-progress-circular indeterminate color="primary" />
+    </div>
+
     <v-row>
       <v-col
         v-for="file in filteredFiles"
@@ -56,9 +67,30 @@
             <span class="text-caption text-medium-emphasis">{{ file.date }}</span>
           </div>
           <div class="d-flex justify-end mt-3 ga-1">
-            <v-btn icon="mdi-download" size="x-small" variant="text" />
-            <v-btn icon="mdi-delete-outline" size="x-small" variant="text" color="error" @click="removeFile(file.id)" />
+            <v-btn
+              icon="mdi-download"
+              size="x-small"
+              variant="text"
+              :loading="downloadingId === file.id"
+              :disabled="file.type === 'Folder'"
+              @click="downloadFile(file)"
+            />
+            <v-btn
+              icon="mdi-delete-outline"
+              size="x-small"
+              variant="text"
+              color="error"
+              :loading="deletingId === file.id"
+              :disabled="isSaving"
+              @click="removeFile(file.id)"
+            />
           </div>
+        </v-card>
+      </v-col>
+
+      <v-col v-if="!isLoading && filteredFiles.length === 0" cols="12">
+        <v-card rounded="xl" elevation="0" class="pa-8 text-center text-medium-emphasis">
+          אין קבצים להצגה
         </v-card>
       </v-col>
     </v-row>
@@ -66,12 +98,19 @@
     <v-dialog v-model="uploadDialog" max-width="520">
       <v-card rounded="xl" class="pa-6">
         <v-card-title class="text-h6 mb-4">העלאת קובץ חדש</v-card-title>
-        <v-text-field v-model="uploadDraft.name" label="שם קובץ" variant="outlined" class="mb-3" />
-        <v-select v-model="uploadDraft.type" :items="typeOptions" label="סוג קובץ" variant="outlined" class="mb-3" />
-        <v-text-field v-model="uploadDraft.size" label="גודל (למשל 1.4 MB)" variant="outlined" class="mb-4" />
+        <v-text-field v-model="uploadDraft.name" label="שם קובץ" variant="outlined" class="mb-3" :disabled="isSaving" />
+        <v-select v-model="uploadDraft.type" :items="typeOptions.filter((type) => type !== 'Folder')" label="סוג קובץ" variant="outlined" class="mb-3" :disabled="isSaving" />
+        <v-file-input
+          v-model="fileToUpload"
+          label="בחירת קובץ"
+          variant="outlined"
+          class="mb-4"
+          :disabled="isSaving"
+          show-size
+        />
         <div class="d-flex justify-end ga-2">
-          <v-btn variant="text" @click="uploadDialog = false">ביטול</v-btn>
-          <v-btn color="primary" rounded="lg" @click="addFile">הוספה</v-btn>
+          <v-btn variant="text" :disabled="isSaving" @click="uploadDialog = false">ביטול</v-btn>
+          <v-btn color="primary" rounded="lg" :loading="isSaving" @click="addFile">הוספה</v-btn>
         </div>
       </v-card>
     </v-dialog>
@@ -79,10 +118,10 @@
     <v-dialog v-model="folderDialog" max-width="460">
       <v-card rounded="xl" class="pa-6">
         <v-card-title class="text-h6 mb-4">יצירת תיקיה</v-card-title>
-        <v-text-field v-model="folderName" label="שם תיקיה" variant="outlined" class="mb-4" />
+        <v-text-field v-model="folderName" label="שם תיקיה" variant="outlined" class="mb-4" :disabled="isSaving" />
         <div class="d-flex justify-end ga-2">
-          <v-btn variant="text" @click="folderDialog = false">ביטול</v-btn>
-          <v-btn color="primary" rounded="lg" @click="addFolder">יצירה</v-btn>
+          <v-btn variant="text" :disabled="isSaving" @click="folderDialog = false">ביטול</v-btn>
+          <v-btn color="primary" rounded="lg" :loading="isSaving" @click="addFolder">יצירה</v-btn>
         </div>
       </v-card>
     </v-dialog>
@@ -90,32 +129,34 @@
 </template>
 
 <script setup>
-import { computed, reactive, ref } from 'vue';
+import { computed, reactive, ref, onMounted } from 'vue';
+import { useRoute } from 'vue-router';
+import { makeRequest } from '../plugins/api';
+
+const route = useRoute();
+const projectId = computed(() => route.params.id);
 
 const search = ref('');
 const typeFilter = ref(null);
 const uploadDialog = ref(false);
 const folderDialog = ref(false);
 const folderName = ref('');
+const fileToUpload = ref(null);
+const isLoading = ref(false);
+const isSaving = ref(false);
+const deletingId = ref(null);
+const downloadingId = ref(null);
+const errorMessage = ref('');
+const successMessage = ref('');
 
 const typeOptions = ['PDF', 'DWG', 'DOCX', 'JPG', 'PNG', 'XLSX', 'Folder'];
 
 const uploadDraft = reactive({
   name: '',
   type: 'PDF',
-  size: '',
 });
 
-const files = ref([
-  { id: 1, name: 'תוכנית-קומה-א-v3.pdf', size: '4.2 MB', type: 'PDF', icon: 'mdi-file-pdf-box', color: 'error', date: '10/03/2026' },
-  { id: 2, name: 'עיצוב-סלון-גרסה-2.dwg', size: '1.8 MB', type: 'DWG', icon: 'mdi-vector-square', color: 'primary', date: '08/03/2026' },
-  { id: 3, name: 'חוזה-קבלן.docx', size: '512 KB', type: 'DOCX', icon: 'mdi-file-word-box', color: 'info', date: '05/03/2026' },
-  { id: 4, name: 'תמונות-לפני-שיפוץ.jpg', size: '2.1 MB', type: 'JPG', icon: 'mdi-image-outline', color: 'warning', date: '01/03/2026' },
-  { id: 5, name: 'תמונות-אחרי-שיפוץ.jpg', size: '3.4 MB', type: 'JPG', icon: 'mdi-image-outline', color: 'warning', date: '12/03/2026' },
-  { id: 6, name: 'אישור-היתר.pdf', size: '890 KB', type: 'PDF', icon: 'mdi-file-pdf-box', color: 'error', date: '03/03/2026' },
-  { id: 7, name: 'הצעת-מחיר-פרחים.xlsx', size: '220 KB', type: 'XLSX', icon: 'mdi-file-excel-box', color: 'success', date: '07/03/2026' },
-  { id: 8, name: 'סקיצה-רעיון-דנה.png', size: '1.2 MB', type: 'PNG', icon: 'mdi-image-outline', color: 'warning', date: '11/03/2026' },
-]);
+const files = ref([]);
 
 const filteredFiles = computed(() =>
   files.value.filter((file) => {
@@ -145,43 +186,198 @@ const colorByType = {
   Folder: 'secondary',
 };
 
-const addFile = () => {
-  if (!uploadDraft.name || !uploadDraft.type) return;
+const formatBytes = (value) => {
+  const bytes = Number(value || 0);
+  if (bytes <= 0) {
+    return '-';
+  }
 
-  files.value.unshift({
-    id: Date.now(),
-    name: uploadDraft.name,
-    size: uploadDraft.size || '-',
-    type: uploadDraft.type,
-    icon: iconByType[uploadDraft.type] || 'mdi-file-outline',
-    color: colorByType[uploadDraft.type] || 'primary',
-    date: new Date().toLocaleDateString('he-IL'),
-  });
+  if (bytes < 1024) {
+    return `${bytes} B`;
+  }
 
+  const kb = bytes / 1024;
+  if (kb < 1024) {
+    return `${kb.toFixed(1)} KB`;
+  }
+
+  const mb = kb / 1024;
+  return `${mb.toFixed(1)} MB`;
+};
+
+const toItems = (response) => {
+  if (Array.isArray(response)) {
+    return response;
+  }
+
+  if (Array.isArray(response?.data)) {
+    return response.data;
+  }
+
+  if (Array.isArray(response?.data?.data)) {
+    return response.data.data;
+  }
+
+  return [];
+};
+
+const mapFile = (item) => {
+  const type = item.file_type === 'FOLDER' ? 'Folder' : (item.file_type || 'FILE').toUpperCase();
+
+  return {
+    id: item.id,
+    name: item.name || 'קובץ ללא שם',
+    size: item.is_folder ? '-' : formatBytes(item.size_bytes),
+    type,
+    icon: iconByType[type] || 'mdi-file-outline',
+    color: colorByType[type] || 'primary',
+    date: item.created_at ? new Date(item.created_at).toLocaleDateString('he-IL') : '-',
+    url: item.url || null,
+  };
+};
+
+const filesEndpoint = (id) => `/projects/${id}/files`;
+
+const loadFiles = async () => {
+  if (!projectId.value) {
+    files.value = [];
+    errorMessage.value = 'לא נמצא מזהה פרויקט.';
+    return;
+  }
+
+  isLoading.value = true;
+  errorMessage.value = '';
+
+  try {
+    const response = await makeRequest(filesEndpoint(projectId.value), { per_page: 200 });
+    files.value = toItems(response).map(mapFile);
+  } catch {
+    errorMessage.value = 'טעינת הקבצים נכשלה. נסו לרענן את העמוד.';
+    files.value = [];
+  } finally {
+    isLoading.value = false;
+  }
+};
+
+const resetUploadDraft = () => {
   uploadDraft.name = '';
   uploadDraft.type = 'PDF';
-  uploadDraft.size = '';
-  uploadDialog.value = false;
+  fileToUpload.value = null;
 };
 
-const addFolder = () => {
-  if (!folderName.value) return;
+const selectedUploadFile = () => {
+  if (Array.isArray(fileToUpload.value)) {
+    return fileToUpload.value[0] || null;
+  }
 
-  files.value.unshift({
-    id: Date.now(),
-    name: folderName.value,
-    size: '-',
-    type: 'Folder',
-    icon: 'mdi-folder-outline',
-    color: 'secondary',
-    date: new Date().toLocaleDateString('he-IL'),
-  });
-
-  folderName.value = '';
-  folderDialog.value = false;
+  return fileToUpload.value || null;
 };
 
-const removeFile = (id) => {
-  files.value = files.value.filter((file) => file.id !== id);
+const addFile = async () => {
+  const file = selectedUploadFile();
+
+  if (!projectId.value || !uploadDraft.name || !uploadDraft.type || !file) {
+    errorMessage.value = 'יש לבחור קובץ ולמלא שם וסוג.';
+    return;
+  }
+
+  isSaving.value = true;
+  errorMessage.value = '';
+  successMessage.value = '';
+
+  try {
+    const form = new FormData();
+    form.append('name', uploadDraft.name);
+    form.append('file_type', uploadDraft.type.toUpperCase());
+    form.append('is_folder', '0');
+    form.append('file', file);
+
+    await makeRequest(filesEndpoint(projectId.value), form, 'POST');
+    await loadFiles();
+    resetUploadDraft();
+    uploadDialog.value = false;
+    successMessage.value = 'הקובץ הועלה בהצלחה.';
+  } catch {
+    errorMessage.value = 'העלאת הקובץ נכשלה. נסו שוב.';
+  } finally {
+    isSaving.value = false;
+  }
 };
+
+const addFolder = async () => {
+  if (!projectId.value || !folderName.value) {
+    return;
+  }
+
+  isSaving.value = true;
+  errorMessage.value = '';
+  successMessage.value = '';
+
+  try {
+    await makeRequest(filesEndpoint(projectId.value), {
+      name: folderName.value,
+      file_type: 'FOLDER',
+      is_folder: true,
+    }, 'POST');
+
+    await loadFiles();
+    folderName.value = '';
+    folderDialog.value = false;
+    successMessage.value = 'התיקיה נוצרה בהצלחה.';
+  } catch {
+    errorMessage.value = 'יצירת התיקיה נכשלה. נסו שוב.';
+  } finally {
+    isSaving.value = false;
+  }
+};
+
+const removeFile = async (id) => {
+  if (!projectId.value) {
+    return;
+  }
+
+  deletingId.value = id;
+  errorMessage.value = '';
+  successMessage.value = '';
+
+  try {
+    await makeRequest(`${filesEndpoint(projectId.value)}/${id}`, {}, 'DELETE');
+    files.value = files.value.filter((file) => file.id !== id);
+    successMessage.value = 'הפריט נמחק בהצלחה.';
+  } catch {
+    errorMessage.value = 'מחיקת הפריט נכשלה. נסו שוב.';
+  } finally {
+    deletingId.value = null;
+  }
+};
+
+const downloadFile = async (file) => {
+  if (!projectId.value || file.type === 'Folder') {
+    return;
+  }
+
+  downloadingId.value = file.id;
+  errorMessage.value = '';
+
+  try {
+    const response = await makeRequest(`${filesEndpoint(projectId.value)}/${file.id}/download`);
+    const url = response?.url || response?.data?.url;
+
+    if (!url) {
+      throw new Error('No download URL returned');
+    }
+
+    const popup = window.open(url, '_blank', 'noopener,noreferrer');
+
+    if (!popup) {
+      errorMessage.value = 'הדפדפן חסם פתיחת חלון חדש. יש לאפשר חלונות קופצים ולנסות שוב.';
+    }
+  } catch {
+    errorMessage.value = 'הורדת הקובץ נכשלה. נסו שוב.';
+  } finally {
+    downloadingId.value = null;
+  }
+};
+
+onMounted(loadFiles);
 </script>

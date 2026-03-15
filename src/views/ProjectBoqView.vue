@@ -22,6 +22,12 @@
     </v-row>
 
     <v-card rounded="xl" elevation="0" class="pa-4 mb-5">
+      <v-alert v-if="errorMessage" type="error" variant="tonal" class="mb-3">
+        {{ errorMessage }}
+      </v-alert>
+      <div v-if="isLoading" class="py-6 d-flex justify-center">
+        <v-progress-circular indeterminate color="primary" />
+      </div>
       <v-table density="comfortable" hover>
         <thead>
           <tr>
@@ -42,8 +48,11 @@
             <td class="font-weight-bold">{{ currency(item.quantity * item.unitPrice) }}</td>
             <td>
               <v-btn icon="mdi-pencil-outline" variant="text" size="small" @click="startEdit(item)" />
-              <v-btn icon="mdi-delete-outline" variant="text" color="error" size="small" @click="removeItem(item.id)" />
+              <v-btn icon="mdi-delete-outline" variant="text" color="error" size="small" @click="removeItem(item.id)" :loading="isSaving" />
             </td>
+          </tr>
+          <tr v-if="!isLoading && filteredItems.length === 0">
+            <td colspan="6" class="text-center text-medium-emphasis py-6">אין סעיפים להצגה</td>
           </tr>
         </tbody>
       </v-table>
@@ -88,7 +97,7 @@
         <div class="text-body-2 mb-4">סה"כ מחושב: <strong>{{ currency((draft.quantity || 0) * (draft.unitPrice || 0)) }}</strong></div>
         <div class="d-flex justify-end ga-2">
           <v-btn variant="text" @click="itemDialog = false">ביטול</v-btn>
-          <v-btn color="primary" rounded="lg" @click="saveItem">שמירה</v-btn>
+          <v-btn color="primary" rounded="lg" @click="saveItem" :loading="isSaving">שמירה</v-btn>
         </div>
       </v-card>
     </v-dialog>
@@ -96,11 +105,18 @@
 </template>
 
 <script setup>
-import { computed, reactive, ref } from 'vue';
+import { computed, onMounted, reactive, ref } from 'vue';
+import { useRoute } from 'vue-router';
+import { makeRequest } from '../plugins/api';
+
+const route = useRoute();
 
 const search = ref('');
 const itemDialog = ref(false);
 const editingId = ref(null);
+const isLoading = ref(false);
+const isSaving = ref(false);
+const errorMessage = ref('');
 
 const draft = reactive({
   title: '',
@@ -109,12 +125,84 @@ const draft = reactive({
   unitPrice: 0,
 });
 
-const items = ref([
-  { id: 1, title: 'ריצוף גרניט פורצלן', unit: 'מ"ר', quantity: 120, unitPrice: 180 },
-  { id: 2, title: 'צביעת קירות ותקרות', unit: 'מ"ר', quantity: 350, unitPrice: 32 },
-  { id: 3, title: 'נקודות חשמל', unit: 'יח', quantity: 48, unitPrice: 140 },
-  { id: 4, title: 'יחידות נגרות מטבח', unit: 'יח', quantity: 1, unitPrice: 52000 },
-]);
+const items = ref([]);
+
+const projectId = computed(() => route.params.id);
+
+const listEndpoints = (id) => [
+  `/projects/${id}/line-items`,
+  `/projects/${id}/project-line-items`,
+];
+
+const itemEndpoints = (id, lineItemId) => [
+  `/projects/${id}/line-items/${lineItemId}`,
+  `/projects/${id}/project-line-items/${lineItemId}`,
+];
+
+const toItems = (response) => {
+  if (Array.isArray(response)) {
+    return response;
+  }
+
+  if (Array.isArray(response?.data)) {
+    return response.data;
+  }
+
+  return [];
+};
+
+const mapLineItem = (item) => ({
+  id: item.id,
+  title: item.description || 'סעיף ללא שם',
+  unit: item.unit_of_measurement || 'יחידה',
+  quantity: Number(item.quantity || 0),
+  unitPrice: Number(item.estimated_price || 0),
+});
+
+const lineItemPayload = () => ({
+  description: draft.title,
+  unit_of_measurement: draft.unit,
+  quantity: Number(draft.quantity || 0),
+  estimated_price: Number(draft.unitPrice || 0),
+  status: 'pending',
+  type: 'boq_line',
+});
+
+const loadLineItems = async () => {
+  if (!projectId.value) {
+    items.value = [];
+    return;
+  }
+
+  isLoading.value = true;
+  errorMessage.value = '';
+
+  try {
+    let loaded = false;
+
+    for (const endpoint of listEndpoints(projectId.value)) {
+      try {
+        const response = await makeRequest(endpoint);
+        items.value = toItems(response).map(mapLineItem);
+        loaded = true;
+        break;
+      } catch (error) {
+        if (error?.response?.status !== 404) {
+          throw error;
+        }
+      }
+    }
+
+    if (!loaded) {
+      items.value = [];
+    }
+  } catch {
+    errorMessage.value = 'טעינת כתב הכמויות נכשלה.';
+    items.value = [];
+  } finally {
+    isLoading.value = false;
+  }
+};
 
 const filteredItems = computed(() =>
   items.value.filter((item) => !search.value || item.title.includes(search.value))
@@ -138,26 +226,105 @@ const startEdit = (item) => {
 };
 
 const saveItem = () => {
-  if (!draft.title || !draft.unit || !draft.quantity || !draft.unitPrice) return;
+  return onSaveItem();
+};
 
-  if (editingId.value) {
-    const index = items.value.findIndex((item) => item.id === editingId.value);
-    if (index >= 0) {
-      items.value[index] = { id: editingId.value, ...draft };
-    }
-  } else {
-    items.value.unshift({ id: Date.now(), ...draft });
-  }
-
+const resetDraft = () => {
   editingId.value = null;
   draft.title = '';
   draft.unit = 'מ"ר';
   draft.quantity = 1;
   draft.unitPrice = 0;
-  itemDialog.value = false;
 };
 
-const removeItem = (id) => {
-  items.value = items.value.filter((item) => item.id !== id);
+const onSaveItem = async () => {
+  if (!draft.title || !draft.unit || !draft.quantity || !draft.unitPrice || !projectId.value) {
+    return;
+  }
+
+  isSaving.value = true;
+  errorMessage.value = '';
+
+  try {
+    if (editingId.value) {
+      let updated = false;
+      for (const endpoint of itemEndpoints(projectId.value, editingId.value)) {
+        try {
+          await makeRequest(endpoint, lineItemPayload(), 'PUT');
+          updated = true;
+          break;
+        } catch (error) {
+          if (error?.response?.status !== 404) {
+            throw error;
+          }
+        }
+      }
+
+      if (!updated) {
+        throw new Error('Line item update route not found');
+      }
+    } else {
+      let created = false;
+      for (const endpoint of listEndpoints(projectId.value)) {
+        try {
+          await makeRequest(endpoint, lineItemPayload(), 'POST');
+          created = true;
+          break;
+        } catch (error) {
+          if (error?.response?.status !== 404) {
+            throw error;
+          }
+        }
+      }
+
+      if (!created) {
+        throw new Error('Line item create route not found');
+      }
+    }
+
+    await loadLineItems();
+    resetDraft();
+    itemDialog.value = false;
+  } catch {
+    errorMessage.value = 'שמירת הסעיף נכשלה. בדקו את הנתונים ונסו שוב.';
+  } finally {
+    isSaving.value = false;
+  }
 };
+
+const removeItem = async (id) => {
+  if (!projectId.value) {
+    return;
+  }
+
+  isSaving.value = true;
+  errorMessage.value = '';
+
+  try {
+    let deleted = false;
+    for (const endpoint of itemEndpoints(projectId.value, id)) {
+      try {
+        await makeRequest(endpoint, {}, 'DELETE');
+        deleted = true;
+        break;
+      } catch (error) {
+        if (error?.response?.status !== 404) {
+          throw error;
+        }
+      }
+    }
+
+    if (!deleted) {
+      throw new Error('Line item delete route not found');
+    }
+
+    await loadLineItems();
+  } catch {
+    errorMessage.value = 'מחיקת הסעיף נכשלה. נסו שוב.';
+  } finally {
+    isSaving.value = false;
+  }
+};
+
+onMounted(loadLineItems);
 </script>

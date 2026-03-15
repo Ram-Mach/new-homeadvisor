@@ -2,8 +2,15 @@
   <div class="d-flex flex-column" style="height: calc(100vh - 140px)">
     <div class="text-h5 font-weight-bold mb-4">צ'אט פרויקט</div>
 
+    <v-alert v-if="errorMessage" type="error" variant="tonal" class="mb-3">
+      {{ errorMessage }}
+    </v-alert>
+
     <!-- Messages -->
     <v-card rounded="xl" elevation="0" class="flex-grow-1 pa-4 mb-4 overflow-y-auto">
+      <div v-if="isLoading" class="py-8 d-flex justify-center">
+        <v-progress-circular indeterminate color="primary" />
+      </div>
       <div v-for="msg in messages" :key="msg.id" class="mb-4">
         <div class="d-flex align-start ga-3" :class="msg.mine ? 'flex-row-reverse' : ''">
           <v-avatar :color="msg.color" variant="tonal" size="34">
@@ -32,11 +39,12 @@
         variant="outlined"
         rounded="xl"
         density="comfortable"
+        :disabled="isSending"
         hide-details
         class="flex-grow-1"
         @keyup.enter="onSend"
       />
-      <v-btn icon color="primary" size="large" @click="onSend">
+      <v-btn icon color="primary" size="large" :loading="isSending" @click="onSend">
         <v-icon>mdi-send</v-icon>
       </v-btn>
     </div>
@@ -44,28 +52,136 @@
 </template>
 
 <script setup>
-import { ref } from 'vue';
+import { onMounted, ref } from 'vue';
+import { useRoute } from 'vue-router';
+import { useAuthStore } from '../stores/auth';
+import { makeRequest } from '../plugins/api';
+
+const route = useRoute();
+const authStore = useAuthStore();
 
 const newMessage = ref('');
+const messages = ref([]);
+const isLoading = ref(false);
+const isSending = ref(false);
+const errorMessage = ref('');
 
-const messages = ref([
-  { id: 1, sender: 'Mia Shapiro', initials: 'MS', color: 'info', mine: false, text: 'שלום! סיימנו את שלב האינסטלציה היום.', time: '09:10' },
-  { id: 2, sender: 'Alex Morgan', initials: 'AM', color: 'primary', mine: true, text: 'מצוין! מתי מתחילים שלב הטיח?', time: '09:14' },
-  { id: 3, sender: 'Yossi Levi', initials: 'YL', color: 'warning', mine: false, text: 'אנחנו מתכננים להתחיל ביום ראשון של שבוע הבא. צבעי שלום מאשרים צבע בשתי שעות.', time: '09:20' },
-  { id: 4, sender: 'Dana Cohen', initials: 'DC', color: 'secondary', mine: false, text: 'שלחתי את תוכנית המעדכנת לקובץ קבצים. אנא עיינו בה.', time: '10:05' },
-]);
-
-const onSend = () => {
-  if (!newMessage.value.trim()) return;
-  messages.value.push({
-    id: Date.now(),
-    sender: 'Alex Morgan',
-    initials: 'AM',
-    color: 'primary',
-    mine: true,
-    text: newMessage.value.trim(),
-    time: new Date().toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' }),
-  });
-  newMessage.value = '';
+const toItems = (response) => {
+  if (Array.isArray(response)) {
+    return response;
+  }
+  if (Array.isArray(response?.data)) {
+    return response.data;
+  }
+  return [];
 };
+
+const initialsFromName = (name) => {
+  const parts = String(name || '').trim().split(' ').filter(Boolean);
+  if (parts.length === 0) {
+    return '?';
+  }
+  if (parts.length === 1) {
+    return parts[0][0];
+  }
+  return `${parts[0][0]}${parts[parts.length - 1][0]}`;
+};
+
+const colorByMine = (mine) => (mine ? 'primary' : 'info');
+
+const messageEndpoints = (projectId) => [
+  `/projects/${projectId}/messages`,
+  `/projects/${projectId}/project-messages`,
+];
+
+const mapMessage = (item) => {
+  const senderName = item.user?.name || item.sender_name || 'משתמש';
+  const mine = Number(item.user_id) === Number(authStore.user?.id);
+  return {
+    id: item.id,
+    sender: senderName,
+    initials: initialsFromName(senderName),
+    color: colorByMine(mine),
+    mine,
+    text: item.content || '',
+    time: item.created_at
+      ? new Date(item.created_at).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })
+      : '--:--',
+  };
+};
+
+const loadMessages = async () => {
+  const projectId = route.params.id;
+  if (!projectId) {
+    messages.value = [];
+    return;
+  }
+
+  isLoading.value = true;
+  errorMessage.value = '';
+
+  try {
+    let loaded = false;
+    for (const endpoint of messageEndpoints(projectId)) {
+      try {
+        const response = await makeRequest(endpoint);
+        messages.value = toItems(response).map(mapMessage);
+        loaded = true;
+        break;
+      } catch (error) {
+        if (error?.response?.status !== 404) {
+          throw error;
+        }
+      }
+    }
+
+    if (!loaded) {
+      messages.value = [];
+    }
+  } catch {
+    errorMessage.value = 'טעינת ההודעות נכשלה.';
+    messages.value = [];
+  } finally {
+    isLoading.value = false;
+  }
+};
+
+const onSend = async () => {
+  const projectId = route.params.id;
+  const content = newMessage.value.trim();
+  if (!projectId || !content) {
+    return;
+  }
+
+  isSending.value = true;
+  errorMessage.value = '';
+
+  try {
+    let sent = false;
+    for (const endpoint of messageEndpoints(projectId)) {
+      try {
+        await makeRequest(endpoint, { content }, 'POST');
+        sent = true;
+        break;
+      } catch (error) {
+        if (error?.response?.status !== 404) {
+          throw error;
+        }
+      }
+    }
+
+    if (!sent) {
+      throw new Error('Message route not found');
+    }
+
+    newMessage.value = '';
+    await loadMessages();
+  } catch {
+    errorMessage.value = 'שליחת ההודעה נכשלה. נסו שוב.';
+  } finally {
+    isSending.value = false;
+  }
+};
+
+onMounted(loadMessages);
 </script>

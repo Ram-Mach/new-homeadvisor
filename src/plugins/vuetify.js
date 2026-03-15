@@ -4,6 +4,7 @@ import * as directives from 'vuetify/directives';
 import 'vuetify/styles';
 import '@mdi/font/css/materialdesignicons.css';
 import { aliases, mdi } from 'vuetify/iconsets/mdi';
+import { en, he } from 'vuetify/locale';
 
 const savedTheme = localStorage.getItem('ha-theme') || 'light';
 
@@ -81,6 +82,43 @@ export default createVuetify({
   locale: {
     locale: 'he',
     fallback: 'en',
+    messages: {
+      en,
+      he: {
+        ...he,
+        $vuetify: {
+          ...he.$vuetify,
+          input: {
+            ...(he.$vuetify?.input || {}),
+            clear: 'נקה',
+          },
+          noDataText: 'אין נתונים',
+          loading: 'טוען...',
+          open: 'פתח',
+          close: 'סגור',
+          dataIterator: {
+            ...(he.$vuetify?.dataIterator || {}),
+            noResultsText: 'לא נמצאו תוצאות',
+            noDataText: 'אין נתונים להצגה',
+          },
+          dataTable: {
+            ...(he.$vuetify?.dataTable || {}),
+            sortBy: 'מיון לפי',
+          },
+          pagination: {
+            ...(he.$vuetify?.pagination || {}),
+            ariaLabel: {
+              ...(he.$vuetify?.pagination?.ariaLabel || {}),
+              root: 'ניווט עמודים',
+              previous: 'עמוד קודם',
+              next: 'עמוד הבא',
+              currentPage: 'עמוד נוכחי',
+              page: 'עמוד',
+            },
+          },
+        },
+      },
+    },
     rtl: {
       he: true,
       en: false,

@@ -38,6 +38,12 @@
 
     <v-card rounded="xl" elevation="0" class="pa-5">
       <div class="text-subtitle-1 font-weight-semibold mb-4">קטגוריות תקציב</div>
+      <v-alert v-if="loadError" type="error" variant="tonal" class="mb-4">
+        {{ loadError }}
+      </v-alert>
+      <div v-if="isLoading" class="py-6 d-flex justify-center">
+        <v-progress-circular indeterminate color="primary" />
+      </div>
       <v-table density="comfortable">
         <thead>
           <tr>
@@ -70,6 +76,9 @@
               <v-btn icon="mdi-delete-outline" variant="text" color="error" size="small" @click="removeCategory(row.id)" />
             </td>
           </tr>
+          <tr v-if="!isLoading && categories.length === 0">
+            <td colspan="6" class="text-center text-medium-emphasis py-4">אין קטגוריות תקציב עדיין.</td>
+          </tr>
         </tbody>
       </v-table>
     </v-card>
@@ -88,7 +97,7 @@
         </v-row>
         <div class="d-flex justify-end ga-2 mt-2">
           <v-btn variant="text" @click="dialog = false">ביטול</v-btn>
-          <v-btn color="primary" rounded="lg" @click="saveCategory">שמירה</v-btn>
+          <v-btn color="primary" rounded="lg" :loading="isSaving" @click="saveCategory">שמירה</v-btn>
         </div>
       </v-card>
     </v-dialog>
@@ -96,10 +105,19 @@
 </template>
 
 <script setup>
-import { computed, reactive, ref } from 'vue';
+import { computed, onMounted, reactive, ref } from 'vue';
+import { useRoute } from 'vue-router';
+import { makeRequest } from '../plugins/api';
+
+const route = useRoute();
+const projectId = computed(() => route.params.id);
 
 const dialog = ref(false);
 const editingId = ref(null);
+const isLoading = ref(false);
+const isSaving = ref(false);
+const loadError = ref('');
+const saveError = ref('');
 
 const draft = reactive({
   name: '',
@@ -107,15 +125,7 @@ const draft = reactive({
   spent: 0,
 });
 
-const categories = ref([
-  { id: 1, name: 'הריסה ושלד', budget: 60000, spent: 58000 },
-  { id: 2, name: 'חשמל', budget: 35000, spent: 32000 },
-  { id: 3, name: 'אינסטלציה', budget: 28000, spent: 25000 },
-  { id: 4, name: 'טיח וצבע', budget: 40000, spent: 18000 },
-  { id: 5, name: 'ריצוף ואריחים', budget: 55000, spent: 42000 },
-  { id: 6, name: 'מטבח', budget: 70000, spent: 43400 },
-  { id: 7, name: 'ריהוט ועיצוב', budget: 32000, spent: 0 },
-]);
+const categories = ref([]);
 
 const totalBudget = computed(() => categories.value.reduce((sum, row) => sum + row.budget, 0));
 const totalSpent = computed(() => categories.value.reduce((sum, row) => sum + row.spent, 0));
@@ -131,7 +141,52 @@ const formatCurrency = (value) => new Intl.NumberFormat('he-IL', {
   maximumFractionDigits: 0,
 }).format(value || 0);
 
+const toCategory = (lineItem) => ({
+  id: lineItem.id,
+  name: lineItem.description || 'קטגוריה ללא שם',
+  budget: Number(lineItem.estimated_price || 0),
+  spent: Number(lineItem.actual_price || 0),
+});
+
+const toLineItems = (response) => {
+  if (Array.isArray(response)) {
+    return response;
+  }
+
+  if (Array.isArray(response?.data)) {
+    return response.data;
+  }
+
+  if (Array.isArray(response?.data?.data)) {
+    return response.data.data;
+  }
+
+  return [];
+};
+
+const loadCategories = async () => {
+  if (!projectId.value) {
+    categories.value = [];
+    loadError.value = 'לא נמצא מזהה פרויקט.';
+    return;
+  }
+
+  isLoading.value = true;
+  loadError.value = '';
+
+  try {
+    const response = await makeRequest(`/projects/${projectId.value}/line-items`, { per_page: 200 });
+    categories.value = toLineItems(response).map(toCategory);
+  } catch {
+    loadError.value = 'טעינת קטגוריות התקציב נכשלה. נסו לרענן את העמוד.';
+    categories.value = [];
+  } finally {
+    isLoading.value = false;
+  }
+};
+
 const openCreate = () => {
+  saveError.value = '';
   editingId.value = null;
   draft.name = '';
   draft.budget = 0;
@@ -140,6 +195,7 @@ const openCreate = () => {
 };
 
 const openEdit = (row) => {
+  saveError.value = '';
   editingId.value = row.id;
   draft.name = row.name;
   draft.budget = row.budget;
@@ -147,32 +203,59 @@ const openEdit = (row) => {
   dialog.value = true;
 };
 
-const saveCategory = () => {
+const saveCategory = async () => {
   if (!draft.name || draft.budget < 0 || draft.spent < 0) return;
 
-  if (editingId.value) {
-    const index = categories.value.findIndex((row) => row.id === editingId.value);
-    if (index >= 0) {
-      categories.value[index] = {
-        id: editingId.value,
-        name: draft.name,
-        budget: Number(draft.budget),
-        spent: Number(draft.spent),
-      };
-    }
-  } else {
-    categories.value.unshift({
-      id: Date.now(),
-      name: draft.name,
-      budget: Number(draft.budget),
-      spent: Number(draft.spent),
-    });
+  if (!projectId.value) {
+    saveError.value = 'לא נמצא מזהה פרויקט.';
+    return;
   }
 
-  dialog.value = false;
+  isSaving.value = true;
+  saveError.value = '';
+
+  const payload = {
+    description: draft.name,
+    quantity: 1,
+    unit_of_measurement: 'יחידה',
+    estimated_price: Number(draft.budget),
+    actual_price: Number(draft.spent),
+    type: 'boq_line',
+  };
+
+  try {
+    if (editingId.value) {
+      await makeRequest(`/projects/${projectId.value}/line-items/${editingId.value}`, payload, 'PATCH');
+    } else {
+      await makeRequest(`/projects/${projectId.value}/line-items`, payload, 'POST');
+    }
+
+    await loadCategories();
+    dialog.value = false;
+  } catch {
+    saveError.value = 'שמירת הקטגוריה נכשלה. נסו שוב.';
+  } finally {
+    isSaving.value = false;
+  }
+
+  if (saveError.value) {
+    return;
+  }
 };
 
-const removeCategory = (id) => {
-  categories.value = categories.value.filter((row) => row.id !== id);
+const removeCategory = async (id) => {
+  if (!projectId.value) {
+    loadError.value = 'לא נמצא מזהה פרויקט.';
+    return;
+  }
+
+  try {
+    await makeRequest(`/projects/${projectId.value}/line-items/${id}`, {}, 'DELETE');
+    categories.value = categories.value.filter((row) => row.id !== id);
+  } catch {
+    loadError.value = 'מחיקת הקטגוריה נכשלה. נסו שוב.';
+  }
 };
+
+onMounted(loadCategories);
 </script>

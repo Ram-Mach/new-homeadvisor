@@ -33,6 +33,12 @@
     </v-row>
 
     <v-card rounded="xl" elevation="0" class="pa-4">
+      <v-alert v-if="errorMessage" type="error" variant="tonal" class="mb-3">
+        {{ errorMessage }}
+      </v-alert>
+      <div v-if="isLoading" class="py-6 d-flex justify-center">
+        <v-progress-circular indeterminate color="primary" />
+      </div>
       <v-table density="comfortable" hover>
         <thead>
           <tr>
@@ -62,9 +68,12 @@
               </v-chip>
             </td>
             <td>
-              <v-btn icon="mdi-pencil-outline" variant="text" size="small" @click="startEdit(member)" />
-              <v-btn icon="mdi-delete-outline" variant="text" size="small" color="error" @click="removeMember(member.id)" />
+              <v-btn icon="mdi-pencil-outline" variant="text" size="small" :disabled="isSaving" @click="startEdit(member)" />
+              <v-btn icon="mdi-delete-outline" variant="text" size="small" color="error" :loading="isSaving" @click="removeMember(member.id)" />
             </td>
+          </tr>
+          <tr v-if="!isLoading && filteredMembers.length === 0">
+            <td colspan="4" class="text-center text-medium-emphasis py-6">אין חברי צוות להצגה</td>
           </tr>
         </tbody>
       </v-table>
@@ -78,7 +87,7 @@
         <v-select v-model="draft.role" :items="roleOptions" label="תפקיד" variant="outlined" class="mb-4" />
         <div class="d-flex justify-end ga-2">
           <v-btn variant="text" @click="inviteDialog = false">ביטול</v-btn>
-          <v-btn color="primary" rounded="lg" @click="saveMember">שמירה</v-btn>
+          <v-btn color="primary" rounded="lg" :loading="isSaving" @click="saveMember">שמירה</v-btn>
         </div>
       </v-card>
     </v-dialog>
@@ -86,12 +95,19 @@
 </template>
 
 <script setup>
-import { computed, reactive, ref } from 'vue';
+import { computed, onMounted, reactive, ref } from 'vue';
+import { useRoute } from 'vue-router';
+import { makeRequest } from '../plugins/api';
+
+const route = useRoute();
 
 const search = ref('');
 const roleFilter = ref(null);
 const inviteDialog = ref(false);
 const editingId = ref(null);
+const isLoading = ref(false);
+const isSaving = ref(false);
+const errorMessage = ref('');
 
 const roleOptions = ['ProjectManager', 'Designer', 'Architect', 'Contractor', 'Homeowner'];
 
@@ -101,12 +117,81 @@ const draft = reactive({
   role: 'Contractor',
 });
 
-const members = ref([
-  { id: 1, name: 'Mia Shapiro', email: 'mia@example.com', role: 'ProjectManager', active: true, color: 'info', initials: 'MS' },
-  { id: 2, name: 'Alex Morgan', email: 'alex@example.com', role: 'Designer', active: true, color: 'primary', initials: 'AM' },
-  { id: 3, name: 'Dana Cohen', email: 'dana@example.com', role: 'Architect', active: true, color: 'secondary', initials: 'DC' },
-  { id: 4, name: 'Yossi Levi', email: 'yossi@example.com', role: 'Contractor', active: false, color: 'warning', initials: 'YL' },
-]);
+const members = ref([]);
+
+const projectId = computed(() => route.params.id);
+
+const membersEndpoint = (id) => `/projects/${id}/members`;
+const memberItemEndpoint = (id, memberId) => `/projects/${id}/members/${memberId}`;
+
+const toItems = (response) => {
+  if (Array.isArray(response)) {
+    return response;
+  }
+
+  if (Array.isArray(response?.data)) {
+    return response.data;
+  }
+
+  return [];
+};
+
+const initialsFromName = (name) => {
+  const parts = String(name || '').trim().split(' ').filter(Boolean);
+  if (parts.length === 0) {
+    return '?';
+  }
+  if (parts.length === 1) {
+    return parts[0][0];
+  }
+  return `${parts[0][0]}${parts[parts.length - 1][0]}`;
+};
+
+const colorByRole = (role) => {
+  const map = {
+    ProjectManager: 'info',
+    Designer: 'primary',
+    Architect: 'secondary',
+    Contractor: 'warning',
+    Homeowner: 'success',
+  };
+  return map[role] || 'primary';
+};
+
+const mapMember = (member) => {
+  const name = member.user?.name || member.name || `משתמש #${member.user_id}`;
+  const role = member.role || 'Contractor';
+  return {
+    id: member.id,
+    userId: member.user_id,
+    name,
+    email: member.user?.email || member.email || '-',
+    role,
+    active: member.is_active !== 0,
+    color: colorByRole(role),
+    initials: initialsFromName(name),
+  };
+};
+
+const loadMembers = async () => {
+  if (!projectId.value) {
+    members.value = [];
+    return;
+  }
+
+  isLoading.value = true;
+  errorMessage.value = '';
+
+  try {
+    const response = await makeRequest(membersEndpoint(projectId.value));
+    members.value = toItems(response).map(mapMember);
+  } catch {
+    errorMessage.value = 'טעינת חברי הצוות נכשלה.';
+    members.value = [];
+  } finally {
+    isLoading.value = false;
+  }
+};
 
 const filteredMembers = computed(() =>
   members.value.filter((member) => {
@@ -125,47 +210,67 @@ const startEdit = (member) => {
 };
 
 const saveMember = () => {
-  if (!draft.name || !draft.email || !draft.role) return;
+  return onSaveMember();
+};
 
-  const initials = draft.name
-    .split(' ')
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((part) => part[0])
-    .join('')
-    .toUpperCase();
-
-  if (editingId.value) {
-    const index = members.value.findIndex((item) => item.id === editingId.value);
-    if (index >= 0) {
-      members.value[index] = {
-        ...members.value[index],
-        name: draft.name,
-        email: draft.email,
-        role: draft.role,
-        initials,
-      };
-    }
-  } else {
-    members.value.unshift({
-      id: Date.now(),
-      name: draft.name,
-      email: draft.email,
-      role: draft.role,
-      active: false,
-      color: 'primary',
-      initials,
-    });
-  }
-
+const resetDraft = () => {
   editingId.value = null;
   draft.name = '';
   draft.email = '';
   draft.role = 'Contractor';
-  inviteDialog.value = false;
 };
 
-const removeMember = (id) => {
-  members.value = members.value.filter((member) => member.id !== id);
+const onSaveMember = async () => {
+  if (!projectId.value || !draft.name || !draft.email || !draft.role) {
+    return;
+  }
+
+  isSaving.value = true;
+  errorMessage.value = '';
+
+  try {
+    if (editingId.value) {
+      await makeRequest(memberItemEndpoint(projectId.value, editingId.value), {
+        name: draft.name,
+        email: draft.email,
+        role: draft.role,
+      }, 'PUT');
+    } else {
+      await makeRequest(membersEndpoint(projectId.value), {
+        name: draft.name,
+        email: draft.email,
+        role: draft.role,
+      }, 'POST');
+    }
+
+    resetDraft();
+    inviteDialog.value = false;
+    await loadMembers();
+  } catch {
+    errorMessage.value = 'שמירת חבר צוות נכשלה. נסו שוב.';
+  } finally {
+    isSaving.value = false;
+  }
 };
+
+const removeMember = async (id) => {
+  if (!projectId.value) {
+    return;
+  }
+
+  isSaving.value = true;
+  errorMessage.value = '';
+
+  try {
+    await makeRequest(memberItemEndpoint(projectId.value, id), {}, 'DELETE');
+
+    await loadMembers();
+  } catch {
+    errorMessage.value = 'מחיקת חבר צוות נכשלה. נסו שוב.';
+  } finally {
+    isSaving.value = false;
+  }
+};
+
+onMounted(loadMembers);
 </script>

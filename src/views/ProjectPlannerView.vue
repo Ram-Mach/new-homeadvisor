@@ -104,6 +104,10 @@
 
         <v-divider class="my-5" />
 
+        <v-alert v-if="saveError" type="error" variant="tonal" class="mb-4">
+          {{ saveError }}
+        </v-alert>
+
         <div class="d-flex flex-wrap ga-2 justify-space-between">
           <v-btn variant="text" prepend-icon="mdi-restart" @click="planner.resetPlanner">
             איפוס
@@ -154,6 +158,7 @@ import { usePlannerStore } from '../stores/planner';
 const router = useRouter();
 const planner = usePlannerStore();
 const isSaving = ref(false);
+const saveError = ref('');
 
 const propertyTypes = [
   'דירה',
@@ -192,20 +197,67 @@ const onPrevious = () => {
   planner.goToStep(Math.max(1, planner.step - 1));
 };
 
+const mapPropertyType = (value) => {
+  const map = {
+    דירה: 'apartment',
+    'בית פרטי': 'private_house',
+    פנטהאוז: 'apartment',
+    משרד: 'other',
+  };
+
+  return map[value] || 'other';
+};
+
+const extractCreatedProject = (response) => {
+  if (response?.data?.id) {
+    return response.data;
+  }
+
+  if (response?.id) {
+    return response;
+  }
+
+  return null;
+};
+
 const onSaveProject = async () => {
+  saveError.value = '';
   isSaving.value = true;
 
   try {
-    console.log('TODO: לחבר נקודת קצה אמיתית לשמירת פרויקט מתכנן', planner.payload);
-    await makeRequest('/projects/planner', planner.payload, 'POST');
-  } catch (error) {
-    console.log('שמירה במצב דמה הושלמה מקומית', planner.payload);
+    const projectPayload = {
+      name: planner.projectName.trim(),
+      property_type: mapPropertyType(planner.propertyType),
+      status: 'draft',
+      total_budget: planner.summaryTotal,
+    };
+
+    const createProjectResponse = await makeRequest('/projects', projectPayload, 'POST');
+    const createdProject = extractCreatedProject(createProjectResponse);
+
+    if (!createdProject?.id) {
+      throw new Error('לא התקבל מזהה פרויקט מהשרת');
+    }
+
+    for (const [index, item] of planner.generatedLineItems.entries()) {
+      await makeRequest(`/projects/${createdProject.id}/line-items`, {
+        description: `${item.areaLabel} - ${item.title}`,
+        quantity: Number(item.quantity || 0),
+        unit_of_measurement: item.unit || 'יחידה',
+        estimated_price: Number(item.quantity || 0) * Number(item.estimatedUnitPrice || 0),
+        actual_price: 0,
+        type: 'boq_line',
+        order: index,
+      }, 'POST');
+    }
+
+    planner.resetPlanner();
+    router.push({ name: 'project-dashboard', params: { id: createdProject.id } });
+  } catch {
+    saveError.value = 'שמירת הפרויקט נכשלה. נסו שוב בעוד רגע.';
   } finally {
     isSaving.value = false;
   }
-
-  planner.resetPlanner();
-  router.push({ name: 'org-dashboard' });
 };
 
 const currency = (value) => new Intl.NumberFormat('he-IL', {

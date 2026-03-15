@@ -13,7 +13,7 @@
 </template>
 
 <script setup>
-import { computed } from 'vue';
+import { computed, onMounted } from 'vue';
 import { storeToRefs } from 'pinia';
 import { RouterView, useRoute } from 'vue-router';
 import MainLayout from './layouts/MainLayout.vue';
@@ -29,4 +29,12 @@ const layout = computed(() => route.meta.layout ?? 'main');
 
 // Derive current project from the active route param so sidebar links always match.
 const currentProjectId = computed(() => route.params.id ?? null);
+
+onMounted(async () => {
+  try {
+    await authStore.fetchMe();
+  } catch {
+    // If session is invalid or backend is unavailable, router guard handles access.
+  }
+});
 </script>

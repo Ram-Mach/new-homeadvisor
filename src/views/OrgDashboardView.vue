@@ -22,6 +22,18 @@
       <v-col cols="12" md="7">
         <v-card rounded="xl" elevation="0" class="pa-5">
           <div class="text-subtitle-1 font-weight-semibold mb-4">פרויקטים פעילים</div>
+          <v-alert v-if="projectsError" type="error" variant="tonal" class="mb-3">
+            {{ projectsError }}
+          </v-alert>
+          <div v-if="isLoadingProjects" class="py-6 d-flex justify-center">
+            <v-progress-circular indeterminate color="primary" />
+          </div>
+          <div
+            v-else-if="projects.length === 0"
+            class="text-body-2 text-medium-emphasis py-6"
+          >
+            עדיין אין פרויקטים להצגה.
+          </div>
           <v-list lines="two" class="pa-0">
             <v-list-item
               v-for="project in projects"
@@ -67,26 +79,144 @@
 </template>
 
 <script setup>
-const stats = [
-  { label: 'פרויקטים פעילים', value: 4, icon: 'mdi-home-city-outline', color: 'primary', trend: '+2 החודש' },
-  { label: 'חברי צוות', value: 12, icon: 'mdi-account-group-outline', color: 'success', trend: '+1 החודש' },
-  { label: 'תקציב כולל', value: '₪820K', icon: 'mdi-cash-multiple', color: 'warning', trend: '68% נוצל' },
-  { label: 'הצעות פתוחות', value: 7, icon: 'mdi-gavel', color: 'info', trend: '3 ממתינות' },
-];
+import { computed, onMounted, ref } from 'vue';
+import { makeRequest } from '../plugins/api';
 
-const projects = [
-  { id: 'p-2048', name: 'שיפוץ לופט במרכז העיר', status: 'בביצוע • 68% הושלם', budget: '₪320K', color: 'primary', icon: 'mdi-home-city-outline' },
-  { id: 'p-2049', name: 'בית פרטי ברמת השרון', status: 'בתכנון • 20% הושלם', budget: '₪210K', color: 'success', icon: 'mdi-home-outline' },
-  { id: 'p-2050', name: 'משרד קומה 5', status: 'ממתין לאישורים', budget: '₪180K', color: 'warning', icon: 'mdi-office-building-outline' },
-  { id: 'p-2051', name: 'וילה בהרצליה', status: 'בדיקת הצעות מחיר', budget: '₪110K', color: 'info', icon: 'mdi-home-variant-outline' },
-];
+const isLoadingProjects = ref(false);
+const projectsError = ref('');
+const projectsRaw = ref([]);
 
-const activity = [
-  { id: 1, text: 'הצעת מחיר חדשה התקבלה מ-ABC Building', time: 'לפני 20 דקות', color: 'primary' },
-  { id: 2, text: 'Alex Morgan עדכן תקציב לפרויקט 2048', time: 'לפני שעה', color: 'success' },
-  { id: 3, text: 'קובץ תוכנית קומה הועלה', time: 'לפני 3 שעות', color: 'info' },
-  { id: 4, text: 'נוסף חבר צוות: Dana Cohen – מעצבת', time: 'אתמול 14:30', color: 'warning' },
-  { id: 5, text: 'פרויקט 2049 עבר לשלב ביצוע', time: 'אתמול 09:10', color: 'success' },
-];
+const toProjectList = (response) => {
+  if (Array.isArray(response)) {
+    return response;
+  }
+
+  if (Array.isArray(response?.data)) {
+    return response.data;
+  }
+
+  return [];
+};
+
+const statusLabel = (status) => {
+  const map = {
+    active: 'פעיל',
+    bidding: 'מכרז',
+    completed: 'הושלם',
+    planning: 'בתכנון',
+    paused: 'מושהה',
+    archived: 'בארכיון',
+  };
+
+  return map[status] || status || 'לא ידוע';
+};
+
+const projectColor = (status) => {
+  const map = {
+    active: 'primary',
+    bidding: 'info',
+    completed: 'success',
+    planning: 'warning',
+    paused: 'error',
+  };
+
+  return map[status] || 'primary';
+};
+
+const projectIcon = (propertyType) => {
+  const map = {
+    apartment: 'mdi-home-city-outline',
+    private_house: 'mdi-home-outline',
+    office: 'mdi-office-building-outline',
+  };
+
+  return map[propertyType] || 'mdi-home-variant-outline';
+};
+
+const currency = (value) => new Intl.NumberFormat('he-IL', {
+  style: 'currency',
+  currency: 'ILS',
+  maximumFractionDigits: 0,
+}).format(Number(value || 0));
+
+const projects = computed(() => projectsRaw.value.map((project) => ({
+  id: project.id,
+  name: project.name || 'פרויקט ללא שם',
+  status: statusLabel(project.status),
+  budget: currency(project.total_budget),
+  color: projectColor(project.status),
+  icon: projectIcon(project.property_type),
+})));
+
+const stats = computed(() => {
+  const activeCount = projectsRaw.value.filter((project) => project.status === 'active').length;
+  const totalBudget = projectsRaw.value.reduce((sum, project) => sum + Number(project.total_budget || 0), 0);
+  const biddingCount = projectsRaw.value.filter((project) => project.status === 'bidding').length;
+  const memberCount = projectsRaw.value.reduce((sum, project) => {
+    if (Array.isArray(project.members)) {
+      return sum + project.members.length;
+    }
+    return sum;
+  }, 0);
+
+  return [
+    {
+      label: 'פרויקטים פעילים',
+      value: activeCount,
+      icon: 'mdi-home-city-outline',
+      color: 'primary',
+      trend: `${projectsRaw.value.length} בסך הכל`,
+    },
+    {
+      label: 'חברי צוות',
+      value: memberCount,
+      icon: 'mdi-account-group-outline',
+      color: 'success',
+      trend: 'לפי פרויקטים שנטענו',
+    },
+    {
+      label: 'תקציב כולל',
+      value: currency(totalBudget),
+      icon: 'mdi-cash-multiple',
+      color: 'warning',
+      trend: 'מתוך כל הפרויקטים',
+    },
+    {
+      label: 'הצעות פתוחות',
+      value: biddingCount,
+      icon: 'mdi-gavel',
+      color: 'info',
+      trend: 'פרויקטים במצב מכרז',
+    },
+  ];
+});
+
+const activity = computed(() => projectsRaw.value
+  .slice()
+  .sort((a, b) => new Date(b.updated_at || 0) - new Date(a.updated_at || 0))
+  .slice(0, 5)
+  .map((project) => ({
+    id: project.id,
+    text: `הפרויקט ${project.name || 'ללא שם'} עודכן`,
+    time: project.updated_at ? new Date(project.updated_at).toLocaleString('he-IL') : 'ללא זמן עדכון',
+    color: projectColor(project.status),
+  })));
+
+const loadProjects = async () => {
+  isLoadingProjects.value = true;
+  projectsError.value = '';
+
+  try {
+    const response = await makeRequest('/projects');
+    projectsRaw.value = toProjectList(response);
+  } catch {
+    projectsError.value = 'טעינת הפרויקטים נכשלה. נסו לרענן את העמוד.';
+    projectsRaw.value = [];
+  } finally {
+    isLoadingProjects.value = false;
+  }
+};
+
+onMounted(loadProjects);
 </script>
 

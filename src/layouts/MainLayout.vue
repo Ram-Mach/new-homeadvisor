@@ -51,9 +51,13 @@
 <script setup>
 import { computed, ref } from 'vue';
 import { useRoute } from 'vue-router';
+import { useRouter } from 'vue-router';
+import { useAuthStore } from '../stores/auth';
 import SidebarMenu from '../components/SidebarMenu.vue';
 
 const route = useRoute();
+const router = useRouter();
+const authStore = useAuthStore();
 
 const routeTitles = {
   'org-dashboard': 'דשבורד ארגוני',
@@ -107,9 +111,9 @@ const userInitials = computed(() => {
     : parts[0]?.[0] ?? '?';
 });
 
-const onLogout = () => {
-  // Placeholder — replace with real auth store logout action.
-  console.log('User logged out');
+const onLogout = async () => {
+  await authStore.logout();
+  await router.push({ name: 'login' });
 };
 
 const pageTitle = computed(() => routeTitles[route.name] ?? 'HomeAdvisor');

@@ -35,6 +35,12 @@
 
     <!-- Expenses table -->
     <v-card rounded="xl" elevation="0">
+      <v-alert v-if="errorMessage" type="error" variant="tonal" class="ma-4 mb-0">
+        {{ errorMessage }}
+      </v-alert>
+      <div v-if="isLoading" class="py-6 d-flex justify-center">
+        <v-progress-circular indeterminate color="primary" />
+      </div>
       <v-table density="comfortable" hover>
         <thead>
           <tr>
@@ -60,6 +66,9 @@
               <v-icon v-else size="18" color="error">mdi-file-remove-outline</v-icon>
             </td>
           </tr>
+          <tr v-if="!isLoading && filteredExpenses.length === 0">
+            <td colspan="6" class="text-center text-medium-emphasis py-6">אין הוצאות להצגה</td>
+          </tr>
         </tbody>
       </v-table>
     </v-card>
@@ -74,7 +83,7 @@
         <v-text-field v-model="newExpense.vendor" label="ספק" variant="outlined" class="mb-4" />
         <div class="d-flex justify-end ga-3">
           <v-btn variant="text" @click="dialog = false">ביטול</v-btn>
-          <v-btn color="primary" rounded="lg" @click="onAddExpense">שמור</v-btn>
+          <v-btn color="primary" rounded="lg" @click="onAddExpense" :loading="isSaving">שמור</v-btn>
         </div>
       </v-card>
     </v-dialog>
@@ -82,21 +91,94 @@
 </template>
 
 <script setup>
-import { computed, reactive, ref } from 'vue';
+import { computed, onMounted, reactive, ref } from 'vue';
+import { useRoute } from 'vue-router';
+import { makeRequest } from '../plugins/api';
+
+const route = useRoute();
 
 const dialog = ref(false);
 const search = ref('');
 const filterCategory = ref(null);
+const isLoading = ref(false);
+const isSaving = ref(false);
+const errorMessage = ref('');
 
 const categoryOptions = ['חשמל', 'אינסטלציה', 'טיח וצבע', 'ריצוף', 'מטבח', 'ריהוט', 'הריסה'];
 
-const expenses = ref([
-  { id: 1, description: 'עבודות הריסה', category: 'הריסה', amount: '₪18,000', date: '01/03/2026', vendor: 'יוסי לוי עבודות', receipt: true, color: 'primary' },
-  { id: 2, description: 'חומרי חשמל – שלב א', category: 'חשמל', amount: '₪12,500', date: '05/03/2026', vendor: 'ספק חשמל ישיר', receipt: true, color: 'warning' },
-  { id: 3, description: 'צנרת PVC', category: 'אינסטלציה', amount: '₪7,200', date: '08/03/2026', vendor: 'אינסטל פרו', receipt: false, color: 'info' },
-  { id: 4, description: 'אריחי רצפה 60x60', category: 'ריצוף', amount: '₪22,000', date: '10/03/2026', vendor: 'קרמיקה פלוס', receipt: true, color: 'secondary' },
-  { id: 5, description: 'צבע פנים – כל הדירה', category: 'טיח וצבע', amount: '₪9,800', date: '12/03/2026', vendor: 'צבעי שלום', receipt: true, color: 'success' },
-]);
+const expenses = ref([]);
+
+const projectId = computed(() => route.params.id);
+
+const expensesEndpoint = (id) => `/projects/${id}/expenses`;
+
+const currency = (value) => new Intl.NumberFormat('he-IL', {
+  style: 'currency',
+  currency: 'ILS',
+  maximumFractionDigits: 0,
+}).format(Number(value || 0));
+
+const colorByCategory = (category) => {
+  const map = {
+    חשמל: 'warning',
+    אינסטלציה: 'info',
+    'טיח וצבע': 'success',
+    ריצוף: 'secondary',
+    מטבח: 'primary',
+    ריהוט: 'purple',
+    הריסה: 'error',
+  };
+
+  return map[category] || 'primary';
+};
+
+const normalizeCategory = (category) => category || 'כללי';
+
+const toItems = (response) => {
+  if (Array.isArray(response)) {
+    return response;
+  }
+
+  if (Array.isArray(response?.data)) {
+    return response.data;
+  }
+
+  return [];
+};
+
+const mapExpense = (expense) => {
+  const category = normalizeCategory(expense.category);
+  return {
+    id: expense.id,
+    description: expense.description || 'ללא תיאור',
+    category,
+    amount: currency(expense.amount),
+    date: expense.expense_date ? new Date(expense.expense_date).toLocaleDateString('he-IL') : 'ללא תאריך',
+    vendor: expense.vendor || '-',
+    receipt: Boolean(expense.receipt_path),
+    color: colorByCategory(category),
+  };
+};
+
+const loadExpenses = async () => {
+  if (!projectId.value) {
+    expenses.value = [];
+    return;
+  }
+
+  isLoading.value = true;
+  errorMessage.value = '';
+
+  try {
+    const response = await makeRequest(expensesEndpoint(projectId.value));
+    expenses.value = toItems(response).map(mapExpense);
+  } catch {
+    errorMessage.value = 'טעינת ההוצאות נכשלה.';
+    expenses.value = [];
+  } finally {
+    isLoading.value = false;
+  }
+};
 
 const newExpense = reactive({ description: '', category: '', amount: '', vendor: '' });
 
@@ -108,16 +190,36 @@ const filteredExpenses = computed(() =>
   })
 );
 
-const onAddExpense = () => {
-  expenses.value.push({
-    id: Date.now(),
-    ...newExpense,
-    amount: `₪${parseInt(newExpense.amount || 0).toLocaleString()}`,
-    date: new Date().toLocaleDateString('he-IL'),
-    receipt: false,
-    color: 'primary',
-  });
-  dialog.value = false;
-  Object.assign(newExpense, { description: '', category: '', amount: '', vendor: '' });
+const onAddExpense = async () => {
+  if (!projectId.value || !newExpense.description || !newExpense.category || !newExpense.amount) {
+    return;
+  }
+
+  isSaving.value = true;
+  errorMessage.value = '';
+
+  try {
+    const payload = {
+      description: newExpense.description,
+      category: newExpense.category,
+      amount: Number(newExpense.amount),
+      vendor: newExpense.vendor,
+      expense_date: new Date().toISOString().slice(0, 10),
+      payment_method: 'bank_transfer',
+      status: 'approved',
+    };
+
+    await makeRequest(expensesEndpoint(projectId.value), payload, 'POST');
+
+    await loadExpenses();
+    dialog.value = false;
+    Object.assign(newExpense, { description: '', category: '', amount: '', vendor: '' });
+  } catch {
+    errorMessage.value = 'שמירת ההוצאה נכשלה. נסו שוב.';
+  } finally {
+    isSaving.value = false;
+  }
 };
+
+onMounted(loadExpenses);
 </script>
