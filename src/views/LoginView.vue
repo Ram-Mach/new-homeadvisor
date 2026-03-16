@@ -78,8 +78,8 @@ const router = useRouter();
 const authStore = useAuthStore();
 
 const form = reactive({
-  email: '',
-  password: '',
+  email: 'admin@b-1.co.il',
+  password: '123123123',
   remember: true,
 });
 

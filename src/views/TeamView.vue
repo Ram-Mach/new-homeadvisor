@@ -110,6 +110,12 @@ const colorByIndex = ['primary', 'secondary', 'info', 'warning', 'success', 'err
 
 const roleLabel = (role) => {
   const map = {
+    Homeowner: 'בעל בית',
+    Contractor: 'קבלן',
+    Designer: 'מעצב',
+    Architect: 'אדריכל',
+    ProjectManager: 'מנהל פרויקט',
+    super_admin: 'סופר אדמין',
     owner: 'בעלים',
     admin: 'מנהל מערכת',
     manager: 'מנהל/ת פרויקט',

@@ -61,7 +61,7 @@
                 </div>
               </div>
             </td>
-            <td>{{ member.role }}</td>
+            <td>{{ member.roleLabel }}</td>
             <td>
               <v-chip :color="member.active ? 'success' : 'warning'" variant="tonal" size="x-small">
                 {{ member.active ? 'פעיל' : 'ממתין לאישור' }}
@@ -109,7 +109,13 @@ const isLoading = ref(false);
 const isSaving = ref(false);
 const errorMessage = ref('');
 
-const roleOptions = ['ProjectManager', 'Designer', 'Architect', 'Contractor', 'Homeowner'];
+const roleOptions = [
+  { title: 'מנהל פרויקט', value: 'ProjectManager' },
+  { title: 'מעצב', value: 'Designer' },
+  { title: 'אדריכל', value: 'Architect' },
+  { title: 'קבלן', value: 'Contractor' },
+  { title: 'בעל בית', value: 'Homeowner' },
+];
 
 const draft = reactive({
   name: '',
@@ -158,6 +164,18 @@ const colorByRole = (role) => {
   return map[role] || 'primary';
 };
 
+const roleLabel = (role) => {
+  const map = {
+    ProjectManager: 'מנהל פרויקט',
+    Designer: 'מעצב',
+    Architect: 'אדריכל',
+    Contractor: 'קבלן',
+    Homeowner: 'בעל בית',
+  };
+
+  return map[role] || role || 'ללא תפקיד';
+};
+
 const mapMember = (member) => {
   const name = member.user?.name || member.name || `משתמש #${member.user_id}`;
   const role = member.role || 'Contractor';
@@ -167,6 +185,7 @@ const mapMember = (member) => {
     name,
     email: member.user?.email || member.email || '-',
     role,
+    roleLabel: roleLabel(role),
     active: member.is_active !== 0,
     color: colorByRole(role),
     initials: initialsFromName(name),

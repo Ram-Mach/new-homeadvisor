@@ -60,10 +60,12 @@ const normalizeUser = (response) => response?.user || response?.data || response
 
 const roleLabel = (role) => {
   const map = {
-    Homeowner: 'בעל/ת בית',
-    Designer: 'מעצב/ת',
-    Architect: 'אדריכל/ית',
-    ProjectManager: 'מנהל/ת פרויקט',
+    Homeowner: 'בעל בית',
+    Contractor: 'קבלן',
+    Designer: 'מעצב',
+    Architect: 'אדריכל',
+    ProjectManager: 'מנהל פרויקט',
+    super_admin: 'סופר אדמין',
     admin: 'מנהל מערכת',
     manager: 'מנהל/ת פרויקט',
     contractor: 'קבלן',
