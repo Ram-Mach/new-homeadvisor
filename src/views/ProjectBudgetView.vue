@@ -67,7 +67,7 @@
                 :color="usage(row) > 100 ? 'error' : 'primary'"
                 height="6"
                 rounded
-                bg-color="surface-variant"
+                
                 style="min-width: 90px"
               />
             </td>

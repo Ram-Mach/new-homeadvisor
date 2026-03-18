@@ -17,6 +17,8 @@ const ROOM_ICON_KEYWORDS = [
   { keyword: 'ארונות', icon: 'mdi-wardrobe-outline' },
 ];
 
+const MAX_ROOM_COUNT = 10;
+
 const estimateQuantity = (unit, sizeMultiplier) => {
   const normalizedUnit = String(unit || '').toLowerCase();
 
@@ -75,7 +77,7 @@ export const usePlannerStore = defineStore('planner', () => {
     size_sqm: null,
   });
 
-  const selectedRooms = ref([]);
+  const roomCounts = ref({});
   const roomScopes = ref({});
   const generatedLineItems = ref([]);
 
@@ -142,17 +144,42 @@ export const usePlannerStore = defineStore('planner', () => {
   const toggleRoom = (roomKey) => {
     const normalizedRoomKey = String(roomKey);
 
-    if (selectedRooms.value.includes(normalizedRoomKey)) {
-      selectedRooms.value = selectedRooms.value.filter((key) => key !== normalizedRoomKey);
+    if (roomCounts.value[normalizedRoomKey]) {
+      delete roomCounts.value[normalizedRoomKey];
       delete roomScopes.value[normalizedRoomKey];
       return;
     }
 
-    selectedRooms.value = [...selectedRooms.value, normalizedRoomKey];
+    roomCounts.value[normalizedRoomKey] = 1;
 
     if (!Array.isArray(roomScopes.value[normalizedRoomKey])) {
       roomScopes.value[normalizedRoomKey] = [];
     }
+  };
+
+  const incrementRoomCount = (roomKey) => {
+    const normalizedRoomKey = String(roomKey);
+    const currentCount = Number(roomCounts.value[normalizedRoomKey] || 0);
+
+    if (currentCount <= 0) {
+      roomCounts.value[normalizedRoomKey] = 1;
+      return;
+    }
+
+    roomCounts.value[normalizedRoomKey] = Math.min(MAX_ROOM_COUNT, currentCount + 1);
+  };
+
+  const decrementRoomCount = (roomKey) => {
+    const normalizedRoomKey = String(roomKey);
+    const currentCount = Number(roomCounts.value[normalizedRoomKey] || 0);
+
+    if (currentCount <= 1) {
+      delete roomCounts.value[normalizedRoomKey];
+      delete roomScopes.value[normalizedRoomKey];
+      return;
+    }
+
+    roomCounts.value[normalizedRoomKey] = currentCount - 1;
   };
 
   const setRoomScopes = (roomKey, scopes) => {
@@ -163,9 +190,11 @@ export const usePlannerStore = defineStore('planner', () => {
     const nextItems = [];
     let serial = 1;
 
-    selectedRooms.value.forEach((roomKey) => {
+    Object.keys(roomCounts.value).forEach((roomKey) => {
       const area = plannerAreas.value.find((row) => row.id === String(roomKey));
       if (!area) return;
+
+      const roomMultiplier = Math.max(1, Math.min(MAX_ROOM_COUNT, Number(roomCounts.value[roomKey] || 1)));
 
       const selectedScopeIds = roomScopes.value[roomKey] || [];
       const chosenModules = selectedScopeIds.length > 0
@@ -184,7 +213,7 @@ export const usePlannerStore = defineStore('planner', () => {
             title: module.name,
             description: `${module.name} - עבודה כללית`,
             unit: 'קומפלט',
-            quantity: 1,
+            quantity: roomMultiplier,
             estimatedUnitPrice: 0,
           });
           serial += 1;
@@ -205,7 +234,7 @@ export const usePlannerStore = defineStore('planner', () => {
             title: task.description,
             description: task.description,
             unit,
-            quantity: estimateQuantity(unit, sizeFactor.value),
+            quantity: estimateQuantity(unit, sizeFactor.value) * roomMultiplier,
             estimatedUnitPrice: 0,
           });
 
@@ -230,7 +259,7 @@ export const usePlannerStore = defineStore('planner', () => {
       type: 'apartment',
       size_sqm: null,
     };
-    selectedRooms.value = [];
+    roomCounts.value = {};
     roomScopes.value = {};
     generatedLineItems.value = [];
     catalogError.value = '';
@@ -240,7 +269,7 @@ export const usePlannerStore = defineStore('planner', () => {
     setupChoice: setupChoice.value,
     projectName: projectName.value,
     propertyDetails: propertyDetails.value,
-    selectedRooms: selectedRooms.value,
+    roomCounts: roomCounts.value,
     roomScopes: roomScopes.value,
     plannerAreas: plannerAreas.value,
     lineItems: generatedLineItems.value,
@@ -252,7 +281,7 @@ export const usePlannerStore = defineStore('planner', () => {
     step,
     projectName,
     propertyDetails,
-    selectedRooms,
+    roomCounts,
     roomScopes,
     generatedLineItems,
     plannerAreas,
@@ -265,6 +294,9 @@ export const usePlannerStore = defineStore('planner', () => {
     setSetupChoice,
     loadPlannerCatalog,
     toggleRoom,
+    incrementRoomCount,
+    decrementRoomCount,
+    MAX_ROOM_COUNT,
     setRoomScopes,
     generateBoq,
     goToStep,

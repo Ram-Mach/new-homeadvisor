@@ -2,9 +2,21 @@
   <div>
     <div class="d-flex align-center justify-space-between mb-6">
       <div class="text-h5 font-weight-bold">BOQ - כתב כמויות</div>
-      <v-btn color="primary" rounded="lg" prepend-icon="mdi-plus" @click="itemDialog = true">
-        הוספת סעיף
-      </v-btn>
+      <div class="d-flex ga-2">
+        <v-btn
+          color="secondary"
+          variant="elevated"
+          prepend-icon="mdi-share-variant"
+          :loading="isSharingBid"
+          :disabled="isSharingBid"
+          @click="openShareBidDialog"
+        >
+          שתף מכרז לקבלנים
+        </v-btn>
+        <v-btn color="primary" rounded="lg" prepend-icon="mdi-plus" @click="itemDialog = true">
+          הוספת סעיף
+        </v-btn>
+      </div>
     </div>
 
     <v-row class="mb-4">
@@ -124,6 +136,77 @@
         </div>
       </v-card>
     </v-dialog>
+
+    <v-dialog v-model="isShareBidDialogVisible" max-width="560">
+      <v-card rounded="xl" class="pa-6">
+        <v-card-title class="text-h6 mb-2">שיתוף מכרז לקבלנים</v-card-title>
+        <v-card-subtitle class="mb-4">בחרו אם לשתף את כל כתב הכמויות או מודול בודד בלבד.</v-card-subtitle>
+
+        <template v-if="!generatedShareUrl">
+          <v-select
+            v-model="selectedShareModuleKey"
+            :items="shareModuleOptions"
+            label="מה לשתף?"
+            variant="outlined"
+            prepend-inner-icon="mdi-shape-plus-outline"
+          />
+
+          <div class="d-flex justify-end ga-2 mt-2">
+            <v-btn variant="text" :disabled="isSharingBid" @click="isShareBidDialogVisible = false">ביטול</v-btn>
+            <v-btn
+              color="secondary"
+              variant="elevated"
+              prepend-icon="mdi-link-variant"
+              :loading="isSharingBid"
+              :disabled="isSharingBid"
+              @click="onShareBid"
+            >
+              צור קישור שיתוף
+            </v-btn>
+          </div>
+        </template>
+
+        <template v-else>
+          <div class="text-body-2 mb-2">הקישור מוכן. בחרו פלטפורמה לשיתוף ישיר:</div>
+
+          <v-text-field
+            :model-value="generatedShareUrl"
+            label="קישור שיתוף"
+            variant="outlined"
+            prepend-inner-icon="mdi-link-variant"
+            readonly
+            class="mb-3"
+          />
+
+          <div class="d-flex flex-wrap ga-2 mb-4">
+            <v-btn color="success" variant="tonal" prepend-icon="mdi-whatsapp" @click="shareToPlatform('whatsapp')">
+              WhatsApp
+            </v-btn>
+            <v-btn color="info" variant="tonal" prepend-icon="mdi-facebook" @click="shareToPlatform('facebook')">
+              Facebook
+            </v-btn>
+            <v-btn color="primary" variant="tonal" prepend-icon="mdi-send" @click="shareToPlatform('telegram')">
+              Telegram
+            </v-btn>
+            <v-btn color="secondary" variant="tonal" prepend-icon="mdi-email-outline" @click="shareToPlatform('email')">
+              אימייל
+            </v-btn>
+            <v-btn color="secondary" variant="outlined" prepend-icon="mdi-content-copy" @click="copyGeneratedShareUrl">
+              העתק קישור
+            </v-btn>
+          </div>
+
+          <div class="d-flex justify-end ga-2">
+            <v-btn variant="text" @click="resetShareDialog">בחירה מחדש</v-btn>
+            <v-btn variant="text" @click="isShareBidDialogVisible = false">סגור</v-btn>
+          </div>
+        </template>
+      </v-card>
+    </v-dialog>
+
+    <v-snackbar v-model="isShareBidSnackbarVisible" color="secondary" timeout="3200" location="top">
+      {{ shareBidSnackbarMessage }}
+    </v-snackbar>
   </div>
 </template>
 
@@ -136,6 +219,13 @@ const route = useRoute();
 
 const search = ref('');
 const itemDialog = ref(false);
+const isShareBidSnackbarVisible = ref(false);
+const isShareBidDialogVisible = ref(false);
+const isSharingBid = ref(false);
+const shareBidSnackbarMessage = ref('');
+const selectedShareModuleKey = ref('__all__');
+const generatedShareUrl = ref('');
+const generatedShareTargetText = ref('');
 const editingId = ref(null);
 const isLoading = ref(false);
 const isSaving = ref(false);
@@ -158,8 +248,8 @@ const moduleToUnitsMap = ref(new Map());
 const projectId = computed(() => route.params.id);
 
 const listEndpoints = (id) => [
-  `/projects/${id}/line-items`,
-  `/projects/${id}/project-line-items`,
+  `/projects/${id}/line-items?per_page=500`,
+  `/projects/${id}/project-line-items?per_page=500`,
 ];
 
 const itemEndpoints = (id, lineItemId) => [
@@ -438,6 +528,36 @@ const groupedFilteredItems = computed(() => {
   return groups;
 });
 
+const uniqueModuleNames = computed(() => {
+  const moduleSet = new Set(
+    items.value
+      .map((item) => String(item.moduleName || '').trim() || 'ללא מודול')
+      .filter(Boolean)
+  );
+
+  return Array.from(moduleSet).sort((a, b) => a.localeCompare(b, 'he'));
+});
+
+const moduleKeyToNameMap = computed(() => {
+  const map = new Map();
+
+  uniqueModuleNames.value.forEach((moduleName, index) => {
+    map.set(`m${index + 1}`, moduleName);
+  });
+
+  return map;
+});
+
+const shareModuleOptions = computed(() => {
+  return [
+    { title: 'כל המודולים', value: '__all__' },
+    ...Array.from(moduleKeyToNameMap.value.entries()).map(([key, moduleName]) => ({
+      title: moduleName,
+      value: key,
+    })),
+  ];
+});
+
 const totalCost = computed(() =>
   items.value.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0)
 );
@@ -445,6 +565,124 @@ const totalCost = computed(() =>
 const avgCost = computed(() => (items.value.length ? totalCost.value / items.value.length : 0));
 
 const currency = (value) => new Intl.NumberFormat('he-IL', { style: 'currency', currency: 'ILS', maximumFractionDigits: 0 }).format(value || 0);
+
+const buildSocialShareUrl = (platform, shareUrl, shareText) => {
+  const encodedUrl = encodeURIComponent(shareUrl);
+  const encodedText = encodeURIComponent(shareText);
+
+  if (platform === 'whatsapp') {
+    return `https://wa.me/?text=${encodedText}%20${encodedUrl}`;
+  }
+
+  if (platform === 'facebook') {
+    return `https://www.facebook.com/sharer/sharer.php?u=${encodedUrl}`;
+  }
+
+  if (platform === 'telegram') {
+    return `https://t.me/share/url?url=${encodedUrl}&text=${encodedText}`;
+  }
+
+  if (platform === 'email') {
+    return `mailto:?subject=${encodeURIComponent('הזמנה להגשת הצעת מחיר')}&body=${encodedText}%0A%0A${encodedUrl}`;
+  }
+
+  return '';
+};
+
+const tryCopyShareUrl = async (url) => {
+  if (navigator?.clipboard?.writeText) {
+    await navigator.clipboard.writeText(url);
+    return true;
+  }
+
+  return false;
+};
+
+const resetShareDialog = () => {
+  generatedShareUrl.value = '';
+  generatedShareTargetText.value = '';
+  selectedShareModuleKey.value = '__all__';
+};
+
+const copyGeneratedShareUrl = async () => {
+  if (!generatedShareUrl.value) {
+    return;
+  }
+
+  const copied = await tryCopyShareUrl(generatedShareUrl.value);
+  shareBidSnackbarMessage.value = copied
+    ? 'קישור המכרז הועתק ללוח.'
+    : `קישור המכרז מוכן לשיתוף: ${generatedShareUrl.value}`;
+  isShareBidSnackbarVisible.value = true;
+};
+
+const shareToPlatform = (platform) => {
+  if (!generatedShareUrl.value) {
+    return;
+  }
+
+  const shareText = `אפשר להגיש הצעת מחיר דרך הקישור המצורף (${generatedShareTargetText.value}).`;
+  const targetUrl = buildSocialShareUrl(platform, generatedShareUrl.value, shareText);
+
+  if (!targetUrl) {
+    return;
+  }
+
+  if (platform === 'email') {
+    window.location.href = targetUrl;
+    return;
+  }
+
+  window.open(targetUrl, '_blank', 'noopener,noreferrer');
+};
+
+const openShareBidDialog = () => {
+  if (items.value.length === 0) {
+    shareBidSnackbarMessage.value = 'אין סעיפים לשיתוף עדיין.';
+    isShareBidSnackbarVisible.value = true;
+    return;
+  }
+
+  resetShareDialog();
+  isShareBidDialogVisible.value = true;
+};
+
+const onShareBid = async () => {
+  if (!projectId.value || isSharingBid.value) {
+    return;
+  }
+
+  isSharingBid.value = true;
+
+  try {
+    const isAllModules = selectedShareModuleKey.value === '__all__';
+    const selectedModuleName = moduleKeyToNameMap.value.get(selectedShareModuleKey.value) || '';
+    const shareTargetText = isAllModules
+      ? 'כל המודולים'
+      : `מודול: ${selectedModuleName}`;
+
+    const response = await makeRequest(`/projects/${projectId.value}/public-bid-share-link`, {
+      module_name: isAllModules ? null : selectedModuleName,
+    }, 'POST');
+
+    const sharePath = String(response?.data?.share_path || '').trim();
+    if (!sharePath) {
+      throw new Error('share path missing');
+    }
+
+    const shareUrl = new URL(sharePath, window.location.origin).toString();
+
+    generatedShareUrl.value = shareUrl;
+    generatedShareTargetText.value = shareTargetText;
+    shareBidSnackbarMessage.value = `קישור המכרז נוצר בהצלחה (${shareTargetText}). בחרו פלטפורמה לשיתוף.`;
+    isShareBidSnackbarVisible.value = true;
+  } catch {
+    shareBidSnackbarMessage.value = 'יצירת קישור שיתוף נכשלה. נסו שוב.';
+    isShareBidSnackbarVisible.value = true;
+  } finally {
+    isSharingBid.value = false;
+  }
+};
 
 const startEdit = (item) => {
   editingId.value = item.id;

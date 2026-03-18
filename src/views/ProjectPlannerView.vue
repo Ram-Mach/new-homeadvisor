@@ -74,6 +74,8 @@
               <v-stepper-item :value="2" title="בחירת חללים" />
               <v-divider />
               <v-stepper-item :value="3" title="היקף עבודה" />
+              <v-divider />
+              <v-stepper-item :value="4" title="סיכום" />
             </v-stepper-header>
           </v-stepper>
 
@@ -123,11 +125,35 @@
                       <v-icon v-if="isRoomSelected(room.value)" icon="mdi-check-circle" color="primary" />
                     </div>
                     <div class="text-subtitle-2 font-weight-medium">{{ room.label }}</div>
+
+                    <div
+                      v-if="isRoomSelected(room.value)"
+                      class="d-flex align-center justify-space-between mt-3 room-counter"
+                      @click.stop
+                    >
+                      <span class="text-caption text-medium-emphasis">כמות חדרים (עד {{ planner.MAX_ROOM_COUNT }})</span>
+                      <div class="d-flex align-center ga-2">
+                        <v-btn
+                          icon="mdi-minus"
+                          size="x-small"
+                          variant="outlined"
+                          @click.stop="planner.decrementRoomCount(room.value)"
+                        />
+                        <span class="text-body-2 font-weight-bold">{{ roomCount(room.value) }}</span>
+                        <v-btn
+                          icon="mdi-plus"
+                          size="x-small"
+                          variant="outlined"
+                          :disabled="roomCount(room.value) >= planner.MAX_ROOM_COUNT"
+                          @click.stop="planner.incrementRoomCount(room.value)"
+                        />
+                      </div>
+                    </div>
                   </v-card>
                 </v-col>
               </v-row>
 
-              <v-alert v-if="planner.selectedRooms.length === 0" type="warning" variant="tonal" class="mt-4">
+              <v-alert v-if="selectedRoomKeys.length === 0" type="warning" variant="tonal" class="mt-4">
                 צריך לבחור לפחות חלל אחד כדי להמשיך.
               </v-alert>
             </v-window-item>
@@ -135,10 +161,11 @@
             <v-window-item :value="3">
               <div class="text-subtitle-1 mb-4">בחרו היקף עבודה לכל חלל</div>
 
-              <v-row v-if="planner.selectedRooms.length > 0">
-                <v-col v-for="roomKey in planner.selectedRooms" :key="roomKey" cols="12" md="6">
+              <v-row v-if="selectedRoomKeys.length > 0">
+                <v-col v-for="roomKey in selectedRoomKeys" :key="roomKey" cols="12" md="6">
                   <v-card rounded="xl" elevation="0" class="pa-4 h-100">
-                    <div class="text-subtitle-1 font-weight-medium mb-3">{{ roomLabel(roomKey) }}</div>
+                    <div class="text-subtitle-1 font-weight-medium mb-1">{{ roomLabel(roomKey) }}</div>
+                    <div class="text-caption text-medium-emphasis mb-3">כמות: {{ roomCount(roomKey) }}</div>
 
                     <v-checkbox
                       v-for="option in roomScopeOptions(roomKey)"
@@ -147,7 +174,7 @@
                       :label="option.label"
                       density="comfortable"
                       hide-details
-                      @update:model-value="onToggleRoomScope(roomKey, option.value, $event)"
+                      @update:modelValue="onToggleRoomScope(roomKey, option.value, $event)"
                     />
                   </v-card>
                 </v-col>
@@ -156,6 +183,14 @@
               <v-alert v-else type="warning" variant="tonal">
                 חזרו לשלב הקודם ובחרו חללים לשיפוץ.
               </v-alert>
+            </v-window-item>
+
+            <v-window-item :value="4">
+              <v-card rounded="xl" elevation="0" class="pa-6 text-center" color="success" variant="tonal">
+                <v-icon size="42" icon="mdi-check-decagram-outline" color="success" class="mb-3" />
+                <div class="text-h6 mb-2">מעולה! זיהינו {{ summaryItemCount }} סעיפי עבודה לפרויקט שלך.</div>
+                <div class="text-body-2 text-medium-emphasis">כעת אפשר לשמור ולעבור למסך כתב הכמויות.</div>
+              </v-card>
             </v-window-item>
           </v-window>
 
@@ -177,23 +212,23 @@
               </v-btn>
 
               <v-btn
-                v-if="planner.step < 3"
+                v-if="planner.step < 4"
                 color="primary"
                 append-icon="mdi-chevron-left"
                 :disabled="!canProceed"
                 @click="onNext"
               >
-                המשך
+                {{ planner.step === 3 ? 'לסיכום' : 'המשך' }}
               </v-btn>
 
               <v-btn
                 v-else
                 color="primary"
-                prepend-icon="mdi-magic-staff"
+                prepend-icon="mdi-content-save-check-outline"
                 :loading="isSaving"
-                @click="onGenerateBoq"
+                @click="onSaveAndViewBoq"
               >
-                יצירת כתב כמויות
+                שמור וצפה בכתב הכמויות
               </v-btn>
             </div>
           </div>
@@ -214,6 +249,9 @@ const router = useRouter();
 const planner = usePlannerStore();
 const isSaving = ref(false);
 const saveError = ref('');
+const summaryItemsSnapshot = ref([]);
+
+const selectedRoomKeys = computed(() => Object.keys(planner.roomCounts));
 
 const canProceed = computed(() => {
   if (planner.step === 1) {
@@ -221,11 +259,13 @@ const canProceed = computed(() => {
   }
 
   if (planner.step === 2) {
-    return planner.selectedRooms.length > 0;
+    return selectedRoomKeys.value.length > 0;
   }
 
   return true;
 });
+
+const summaryItemCount = computed(() => summaryItemsSnapshot.value.length);
 
 const roomLabel = (roomKey) => {
   const found = planner.roomOptions.find((room) => room.value === roomKey);
@@ -234,7 +274,9 @@ const roomLabel = (roomKey) => {
 
 const roomScopeOptions = (roomKey) => planner.scopeOptionsByRoom[roomKey] || [];
 
-const isRoomSelected = (roomKey) => planner.selectedRooms.includes(roomKey);
+const isRoomSelected = (roomKey) => Number(planner.roomCounts[roomKey] || 0) > 0;
+
+const roomCount = (roomKey) => Number(planner.roomCounts[roomKey] || 0);
 
 const hasRoomScope = (roomKey, scopeKey) => (planner.roomScopes[roomKey] || []).includes(scopeKey);
 
@@ -254,6 +296,10 @@ const onToggleRoomScope = (roomKey, scopeKey, checked) => {
 const onNext = () => {
   if (!canProceed.value) {
     return;
+  }
+
+  if (planner.step === 3) {
+    summaryItemsSnapshot.value = planner.generateBoq();
   }
 
   planner.goToStep(planner.step + 1);
@@ -330,6 +376,7 @@ const toBulkLineItemPayload = (generatedItems) => generatedItems.map((item, inde
 
 const onChooseWizard = () => {
   saveError.value = '';
+  summaryItemsSnapshot.value = [];
   planner.resetPlanner();
   planner.setSetupChoice('wizard');
   planner.loadPlannerCatalog();
@@ -337,6 +384,7 @@ const onChooseWizard = () => {
 
 const onChooseManual = async () => {
   saveError.value = '';
+  summaryItemsSnapshot.value = [];
   isSaving.value = true;
 
   try {
@@ -350,7 +398,7 @@ const onChooseManual = async () => {
   }
 };
 
-const onGenerateBoq = async () => {
+const onSaveAndViewBoq = async () => {
   saveError.value = '';
   isSaving.value = true;
 
@@ -359,7 +407,7 @@ const onGenerateBoq = async () => {
       await planner.loadPlannerCatalog();
     }
 
-    const generatedItems = planner.generateBoq();
+    const generatedItems = summaryItemsSnapshot.value;
 
     if (generatedItems.length === 0) {
       throw new Error('אין סעיפים ליצירה');
@@ -372,6 +420,7 @@ const onGenerateBoq = async () => {
     }, 'POST');
 
     await router.push({ name: 'project-boq', params: { id: createdProject.id } });
+    summaryItemsSnapshot.value = [];
     planner.resetPlanner();
   } catch {
     saveError.value = 'יצירת כתב הכמויות נכשלה. נסו שוב בעוד רגע.';
@@ -381,6 +430,7 @@ const onGenerateBoq = async () => {
 };
 
 const onBackToSetup = () => {
+  summaryItemsSnapshot.value = [];
   planner.resetPlanner();
 };
 

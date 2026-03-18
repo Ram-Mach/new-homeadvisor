@@ -19,7 +19,7 @@ Hebrew RTL renovation management platform. Vue 3 + Vuetify 4 frontend scaffold. 
 - No `this`, no `data()`, no `methods:`
 
 ### Vuetify usage
-- Use Vuetify theme tokens (`color="primary"`, `bg-surface-variant`) — never hardcode hex colors in templates
+
 - Global component defaults are set in `src/plugins/vuetify.js` — do not repeat `rounded`, `variant`, `density` props on every instance
 - Icons: MDI only, prefixed `mdi-`. Example: `mdi-home-city-outline`
 - All custom colors live in `src/plugins/vuetify.js` under `theme.themes.light.colors` and `theme.themes.dark.colors`

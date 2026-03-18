@@ -83,7 +83,7 @@ const routes = [
     meta: { requiresAuth: true },
   },
   {
-    path: '/public/bid/:token',
+    path: '/public/bid/:slug',
     name: 'public-bid-proposal',
     component: PublicBidProposalView,
     meta: { requiresAuth: false, layout: 'public' },
