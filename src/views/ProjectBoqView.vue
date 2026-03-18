@@ -40,18 +40,26 @@
           </tr>
         </thead>
         <tbody>
-          <tr v-for="item in filteredItems" :key="item.id">
-            <td>{{ item.title }}</td>
-            <td>{{ item.unit }}</td>
-            <td>{{ item.quantity }}</td>
-            <td>{{ currency(item.unitPrice) }}</td>
-            <td class="font-weight-bold">{{ currency(item.quantity * item.unitPrice) }}</td>
-            <td>
-              <v-btn icon="mdi-pencil-outline" variant="text" size="small" @click="startEdit(item)" />
-              <v-btn icon="mdi-delete-outline" variant="text" color="error" size="small" @click="removeItem(item.id)" :loading="isSaving" />
-            </td>
-          </tr>
-          <tr v-if="!isLoading && filteredItems.length === 0">
+          <template v-for="group in groupedFilteredItems" :key="group.moduleName">
+            <tr>
+              <td colspan="6" class="text-right py-2 px-3 font-weight-bold">
+                {{ group.moduleName }}
+                <v-chip size="x-small" variant="tonal" class="ms-2">{{ group.items.length }} סעיפים</v-chip>
+              </td>
+            </tr>
+            <tr v-for="item in group.items" :key="item.id">
+              <td>{{ item.title }}</td>
+              <td>{{ item.unit }}</td>
+              <td>{{ item.quantity }}</td>
+              <td>{{ currency(item.unitPrice) }}</td>
+              <td class="font-weight-bold">{{ currency(item.quantity * item.unitPrice) }}</td>
+              <td>
+                <v-btn icon="mdi-pencil-outline" variant="text" size="small" @click="startEdit(item)" />
+                <v-btn icon="mdi-delete-outline" variant="text" color="error" size="small" @click="removeItem(item.id)" :loading="isSaving" />
+              </td>
+            </tr>
+          </template>
+          <tr v-if="!isLoading && groupedFilteredItems.length === 0">
             <td colspan="6" class="text-center text-medium-emphasis py-6">אין סעיפים להצגה</td>
           </tr>
         </tbody>
@@ -82,10 +90,25 @@
     <v-dialog v-model="itemDialog" max-width="540">
       <v-card rounded="xl" class="pa-6">
         <v-card-title class="text-h6 mb-4">{{ editingId ? 'עריכת סעיף BOQ' : 'הוספת סעיף BOQ' }}</v-card-title>
+        <v-select
+          v-model="draft.moduleName"
+          :items="moduleOptions"
+          label="מודול / קטגוריה"
+          variant="outlined"
+          prepend-inner-icon="mdi-shape-outline"
+          class="mb-3"
+          required
+        />
         <v-text-field v-model="draft.title" label="שם סעיף" variant="outlined" class="mb-3" />
         <v-row>
           <v-col cols="4">
-            <v-text-field v-model="draft.unit" label="יחידה" variant="outlined" />
+            <v-select
+              v-model="draft.unit"
+              :items="unitOptionsForSelectedModule"
+              label="סוג יחידה"
+              variant="outlined"
+              required
+            />
           </v-col>
           <v-col cols="4">
             <v-text-field v-model.number="draft.quantity" label="כמות" type="number" variant="outlined" />
@@ -119,6 +142,7 @@ const isSaving = ref(false);
 const errorMessage = ref('');
 
 const draft = reactive({
+  moduleName: '',
   title: '',
   unit: 'מ"ר',
   quantity: 1,
@@ -126,6 +150,10 @@ const draft = reactive({
 });
 
 const items = ref([]);
+const taskToModuleMap = ref(new Map());
+const moduleOptions = ref([]);
+const unitOptions = ref([]);
+const moduleToUnitsMap = ref(new Map());
 
 const projectId = computed(() => route.params.id);
 
@@ -151,22 +179,202 @@ const toItems = (response) => {
   return [];
 };
 
-const mapLineItem = (item) => ({
-  id: item.id,
-  title: item.description || 'סעיף ללא שם',
-  unit: item.unit_of_measurement || 'יחידה',
-  quantity: Number(item.quantity || 0),
-  unitPrice: Number(item.estimated_price || 0),
-});
+const normalizeDescriptionForLookup = (rawDescription) => {
+  const text = String(rawDescription || '').trim();
+
+  if (!text) {
+    return '';
+  }
+
+  const markerPattern = /\[\[MODULE:(.+?)\]\]\s*(.*)$/;
+  const markerMatch = text.match(markerPattern);
+  if (markerMatch) {
+    return (markerMatch[2] || '').trim();
+  }
+
+  const hebrewPrefixPattern = /^מודול:\s*([^|]+)\|\s*(.*)$/;
+  const hebrewMatch = text.match(hebrewPrefixPattern);
+  if (hebrewMatch) {
+    return (hebrewMatch[2] || '').trim();
+  }
+
+  const areaSplit = text.split(' - ');
+  if (areaSplit.length >= 2) {
+    return areaSplit.slice(1).join(' - ').trim();
+  }
+
+  return text;
+};
+
+const inferModuleFromTask = (rawDescription) => {
+  const normalized = normalizeDescriptionForLookup(rawDescription);
+  return taskToModuleMap.value.get(normalized) || '';
+};
+
+const parseModuleDescription = (rawDescription) => {
+  const text = String(rawDescription || '').trim();
+  const tokenAnywhereMatch = text.match(/\[\[MODULE:(.+?)\]\]\s*(.*)$/);
+
+  if (tokenAnywhereMatch) {
+    return {
+      moduleName: tokenAnywhereMatch[1] || 'ללא מודול',
+      title: tokenAnywhereMatch[2] || 'סעיף ללא שם',
+      rawTitle: text,
+    };
+  }
+
+  const hebrewPrefixMatch = text.match(/^מודול:\s*([^|]+)\|\s*(.*)$/);
+  if (hebrewPrefixMatch) {
+    return {
+      moduleName: hebrewPrefixMatch[1] || 'ללא מודול',
+      title: hebrewPrefixMatch[2] || 'סעיף ללא שם',
+      rawTitle: text,
+    };
+  }
+
+  const inferredModuleName = inferModuleFromTask(text);
+
+  if (inferredModuleName) {
+    return {
+      moduleName: inferredModuleName,
+      title: normalizeDescriptionForLookup(text) || 'סעיף ללא שם',
+      rawTitle: text,
+    };
+  }
+
+  return {
+    moduleName: 'ללא מודול',
+    title: text || 'סעיף ללא שם',
+    rawTitle: text,
+  };
+};
+
+const mapLineItem = (item) => {
+  const parsed = parseModuleDescription(item.description);
+
+  return {
+    id: item.id,
+    title: parsed.title,
+    rawTitle: parsed.rawTitle,
+    moduleName: parsed.moduleName,
+    unit: item.unit_of_measurement || 'יחידה',
+    quantity: Number(item.quantity || 0),
+    unitPrice: Number(item.estimated_price || 0),
+  };
+};
+
+const encodeManualDescription = () => {
+  const moduleName = String(draft.moduleName || '').trim();
+  const title = String(draft.title || '').trim();
+
+  if (!moduleName) {
+    return title;
+  }
+
+  return `[[MODULE:${moduleName}]] מודול: ${moduleName} | ${title}`;
+};
 
 const lineItemPayload = () => ({
-  description: draft.title,
+  description: encodeManualDescription(),
   unit_of_measurement: draft.unit,
   quantity: Number(draft.quantity || 0),
   estimated_price: Number(draft.unitPrice || 0),
   status: 'pending',
   type: 'boq_line',
 });
+
+const defaultUnitOptions = [
+  { title: 'יחידה', value: 'יחידה' },
+  { title: 'נקודה', value: 'נקודה' },
+  { title: 'מטר אורך', value: 'מטר אורך' },
+  { title: 'מטר רץ', value: 'מטר רץ' },
+  { title: 'מ"ר', value: 'מ"ר' },
+  { title: 'קומפלט', value: 'קומפלט' },
+  { title: 'סט', value: 'סט' },
+];
+
+const unitOptionsForSelectedModule = computed(() => {
+  const moduleName = String(draft.moduleName || '').trim();
+
+  if (!moduleName) {
+    return unitOptions.value.length > 0 ? unitOptions.value : defaultUnitOptions;
+  }
+
+  const moduleUnits = moduleToUnitsMap.value.get(moduleName) || [];
+
+  if (moduleUnits.length === 0) {
+    return unitOptions.value.length > 0 ? unitOptions.value : defaultUnitOptions;
+  }
+
+  return moduleUnits.map((unit) => ({ title: unit, value: unit }));
+});
+
+const loadPlannerTaskModuleMap = async () => {
+  try {
+    const response = await makeRequest('/planner-data');
+    const areas = Array.isArray(response?.data) ? response.data : (Array.isArray(response) ? response : []);
+    const nextMap = new Map();
+    const moduleSet = new Set();
+    const unitSet = new Set();
+    const nextModuleToUnitsMap = new Map();
+
+    areas.forEach((area) => {
+      const modules = area?.planner_modules || area?.plannerModules || [];
+
+      modules.forEach((module) => {
+        const moduleName = String(module?.name || '').trim();
+        if (moduleName) {
+          moduleSet.add(moduleName);
+          if (!nextModuleToUnitsMap.has(moduleName)) {
+            nextModuleToUnitsMap.set(moduleName, new Set());
+          }
+        }
+
+        const tasks = module?.planner_tasks || module?.plannerTasks || [];
+        tasks.forEach((task) => {
+          const taskDescription = String(task?.description || '').trim();
+          const unit = String(task?.unit_of_measurement || '').trim();
+
+          if (taskDescription) {
+            nextMap.set(taskDescription, moduleName);
+          }
+
+          if (unit) {
+            unitSet.add(unit);
+            if (moduleName && nextModuleToUnitsMap.has(moduleName)) {
+              nextModuleToUnitsMap.get(moduleName).add(unit);
+            }
+          }
+        });
+      });
+    });
+
+    taskToModuleMap.value = nextMap;
+    moduleOptions.value = Array.from(moduleSet).map((name) => ({
+      title: name,
+      value: name,
+    }));
+    unitOptions.value = Array.from(unitSet).map((unit) => ({
+      title: unit,
+      value: unit,
+    }));
+    moduleToUnitsMap.value = new Map(
+      Array.from(nextModuleToUnitsMap.entries()).map(([moduleName, units]) => [
+        moduleName,
+        Array.from(units),
+      ])
+    );
+
+    if (unitOptions.value.length === 0) {
+      unitOptions.value = defaultUnitOptions;
+    }
+  } catch {
+    taskToModuleMap.value = new Map();
+    moduleOptions.value = [];
+    moduleToUnitsMap.value = new Map();
+    unitOptions.value = defaultUnitOptions;
+  }
+};
 
 const loadLineItems = async () => {
   if (!projectId.value) {
@@ -205,8 +413,30 @@ const loadLineItems = async () => {
 };
 
 const filteredItems = computed(() =>
-  items.value.filter((item) => !search.value || item.title.includes(search.value))
+  items.value.filter((item) =>
+    !search.value || item.title.includes(search.value) || item.moduleName.includes(search.value)
+  )
 );
+
+const groupedFilteredItems = computed(() => {
+  const groups = [];
+  const groupMap = new Map();
+
+  filteredItems.value.forEach((item) => {
+    if (!groupMap.has(item.moduleName)) {
+      const nextGroup = {
+        moduleName: item.moduleName || 'ללא מודול',
+        items: [],
+      };
+      groupMap.set(item.moduleName, nextGroup);
+      groups.push(nextGroup);
+    }
+
+    groupMap.get(item.moduleName).items.push(item);
+  });
+
+  return groups;
+});
 
 const totalCost = computed(() =>
   items.value.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0)
@@ -218,6 +448,7 @@ const currency = (value) => new Intl.NumberFormat('he-IL', { style: 'currency', 
 
 const startEdit = (item) => {
   editingId.value = item.id;
+  draft.moduleName = item.moduleName === 'ללא מודול' ? '' : item.moduleName;
   draft.title = item.title;
   draft.unit = item.unit;
   draft.quantity = item.quantity;
@@ -231,14 +462,15 @@ const saveItem = () => {
 
 const resetDraft = () => {
   editingId.value = null;
+  draft.moduleName = '';
   draft.title = '';
-  draft.unit = 'מ"ר';
+  draft.unit = 'יחידה';
   draft.quantity = 1;
   draft.unitPrice = 0;
 };
 
 const onSaveItem = async () => {
-  if (!draft.title || !draft.unit || !draft.quantity || !draft.unitPrice || !projectId.value) {
+  if (!draft.moduleName || !draft.title || !draft.unit || !draft.quantity || !projectId.value) {
     return;
   }
 
@@ -326,5 +558,8 @@ const removeItem = async (id) => {
   }
 };
 
-onMounted(loadLineItems);
+onMounted(async () => {
+  await loadPlannerTaskModuleMap();
+  await loadLineItems();
+});
 </script>
