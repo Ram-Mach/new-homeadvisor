@@ -211,7 +211,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref } from 'vue';
+import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import { makeRequest } from '../plugins/api';
 
@@ -798,6 +798,13 @@ const removeItem = async (id) => {
 
 onMounted(async () => {
   await loadPlannerTaskModuleMap();
-  await loadLineItems();
 });
+
+watch(
+  () => route.params.id,
+  () => {
+    loadLineItems();
+  },
+  { immediate: true },
+);
 </script>

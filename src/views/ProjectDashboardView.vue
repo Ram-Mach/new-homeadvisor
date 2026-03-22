@@ -1,6 +1,19 @@
 <template>
-  <div>
-    <div class="text-h5 font-weight-bold mb-6">דשבורד פרויקט</div>
+  <div class="project-dashboard">
+    <DashboardHero
+      overline="סקירת פרויקט"
+      :title="projectTitle"
+      subtitle="תצוגה מרכזית של התקדמות, לוחות זמנים, צוות ומשימות קריטיות."
+    >
+      <template #actions>
+        <v-btn prepend-icon="mdi-refresh" :loading="isLoading" @click="loadProjectDashboard">
+          רענון נתונים
+        </v-btn>
+        <v-btn color="primary" prepend-icon="mdi-format-list-checks" :to="`/project/${projectId}/timeline`">
+          מעבר ללוח זמנים
+        </v-btn>
+      </template>
+    </DashboardHero>
 
     <v-alert v-if="errorMessage" type="error" variant="tonal" class="mb-4">
       {{ errorMessage }}
@@ -10,108 +23,123 @@
       <v-progress-circular indeterminate color="primary" />
     </div>
 
-    <!-- Summary stat cards -->
-    <v-row v-if="!isLoading" class="mb-6">
-      <v-col v-for="stat in stats" :key="stat.label" cols="6" lg="3">
-        <v-card rounded="xl" elevation="0"  class="pa-4">
-          <v-icon :icon="stat.icon" :color="stat.color" size="24" class="mb-2" />
-          <div class="text-h5 font-weight-bold">{{ stat.value }}</div>
-          <div class="text-caption text-medium-emphasis">{{ stat.label }}</div>
-        </v-card>
-      </v-col>
-    </v-row>
+    <template v-else>
+      <v-row class="mb-2">
+        <v-col v-for="stat in stats" :key="stat.label" cols="12" sm="6" lg="3">
+          <DashboardStatCard
+            :icon="stat.icon"
+            :color="stat.color"
+            :value="stat.value"
+            :label="stat.label"
+            :description="stat.description"
+            :badge-text="stat.label"
+          />
+        </v-col>
+      </v-row>
 
-    <v-row v-if="!isLoading">
-      <!-- Progress -->
-      <v-col cols="12" md="7">
-        <v-card rounded="xl" elevation="0" class="pa-5 mb-4">
-          <div class="text-subtitle-1 font-weight-semibold mb-4">התקדמות לפי שלב</div>
-          <div
-            v-if="phases.length === 0"
-            class="text-body-2 text-medium-emphasis"
-          >
-            אין שלבים להצגה כרגע.
-          </div>
-          <div v-for="phase in phases" :key="phase.name" class="mb-4">
-            <div class="d-flex justify-space-between mb-1">
-              <span class="text-body-2">{{ phase.name }}</span>
-              <span class="text-body-2 font-weight-medium">{{ phase.pct }}%</span>
-            </div>
-            <v-progress-linear
-              :model-value="phase.pct"
-              :color="phase.color"
-              rounded
-              height="8"
-             
-            />
-          </div>
-        </v-card>
-      </v-col>
+      <v-row>
+        <v-col cols="12" lg="8">
+          <DashboardSectionCard title="התקדמות לפי שלב" card-class="mb-4">
+              <div v-if="phases.length === 0" class="text-body-2 text-medium-emphasis">
+                אין שלבים להצגה כרגע.
+              </div>
+              <div v-for="phase in phases" :key="phase.name" class="phase-row">
+                <div class="d-flex align-center justify-space-between mb-1">
+                  <div class="text-body-2 font-weight-medium">{{ phase.name }}</div>
+                  <div class="text-body-2 font-weight-bold">{{ phase.pct }}%</div>
+                </div>
+                <v-progress-linear :model-value="phase.pct" :color="phase.color" rounded height="10" />
+              </div>
+          </DashboardSectionCard>
 
-      <!-- Team members -->
-      <v-col cols="12" md="5">
-        <v-card rounded="xl" elevation="0" class="pa-5 mb-4">
-          <div class="text-subtitle-1 font-weight-semibold mb-4">חברי צוות</div>
-          <v-list class="pa-0">
-            <v-list-item
-              v-for="member in team"
-              :key="member.name"
-              :title="member.name"
-              :subtitle="member.role"
-              class="px-0 mb-1"
-            >
-              <template #prepend>
-                <v-avatar :color="member.color" variant="tonal" size="36" class="me-3">
-                  <span class="text-caption font-weight-bold">{{ member.initials }}</span>
-                </v-avatar>
-              </template>
-              <template #append>
-                <v-chip :color="member.statusColor" size="x-small" variant="tonal">
-                  {{ member.status }}
-                </v-chip>
-              </template>
-            </v-list-item>
-          </v-list>
-        </v-card>
-      </v-col>
-    </v-row>
+          <DashboardSectionCard title="משימות קרובות" body-class="px-2 px-md-4 pb-4">
+            <template #headerRight>
+              <v-chip color="primary" variant="tonal" size="small">{{ tasks.length }} משימות</v-chip>
+            </template>
 
-    <!-- Upcoming tasks -->
-    <v-card v-if="!isLoading" rounded="xl" elevation="0" class="pa-5">
-      <div class="text-subtitle-1 font-weight-semibold mb-4">משימות קרובות</div>
-      <div
-        v-if="tasks.length === 0"
-        class="text-body-2 text-medium-emphasis"
-      >
-        אין משימות להצגה כרגע.
-      </div>
-      <v-table density="compact">
-        <thead>
-          <tr>
-            <th class="text-right">משימה</th>
-            <th class="text-right">אחראי</th>
-            <th class="text-right">תאריך יעד</th>
-            <th class="text-right">סטטוס</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="task in tasks" :key="task.id">
-            <td>{{ task.name }}</td>
-            <td>{{ task.owner }}</td>
-            <td>{{ task.due }}</td>
-            <td>
-              <v-chip :color="task.statusColor" size="x-small" variant="tonal">{{ task.status }}</v-chip>
-            </td>
-          </tr>
-        </tbody>
-      </v-table>
-    </v-card>
+              <div v-if="tasks.length === 0" class="text-body-2 text-medium-emphasis py-6 px-4">
+                אין משימות להצגה כרגע.
+              </div>
+              <v-table v-else density="comfortable" class="tasks-table">
+                <thead>
+                  <tr>
+                    <th class="text-right">משימה</th>
+                    <th class="text-right">אחראי</th>
+                    <th class="text-right">תאריך יעד</th>
+                    <th class="text-right">סטטוס</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="task in tasks" :key="task.id">
+                    <td class="font-weight-medium">{{ task.name }}</td>
+                    <td>{{ task.owner }}</td>
+                    <td>{{ task.due }}</td>
+                    <td>
+                      <v-chip :color="task.statusColor" size="x-small" variant="tonal">{{ task.status }}</v-chip>
+                    </td>
+                  </tr>
+                </tbody>
+              </v-table>
+          </DashboardSectionCard>
+        </v-col>
+
+        <v-col cols="12" lg="4">
+          <DashboardSectionCard title="בריאות הפרויקט" card-class="mb-4">
+              <div class="mb-4">
+                <div class="text-caption text-medium-emphasis mb-1">התקדמות כוללת</div>
+                <div class="d-flex align-center justify-space-between mb-2">
+                  <div class="text-h6 font-weight-bold">{{ overallProgress }}%</div>
+                  <v-chip :color="overallProgress >= 70 ? 'success' : 'warning'" size="small" variant="tonal">
+                    {{ overallProgress >= 70 ? 'במסלול תקין' : 'דורש תשומת לב' }}
+                  </v-chip>
+                </div>
+                <v-progress-linear :model-value="overallProgress" :color="overallProgress >= 70 ? 'success' : 'warning'" rounded height="10" />
+              </div>
+
+              <div class="text-caption text-medium-emphasis mb-1">משימות פתוחות</div>
+              <div class="text-h6 font-weight-bold mb-4">{{ openItemsCount }}</div>
+
+              <div class="text-caption text-medium-emphasis mb-1">יעד סיום</div>
+              <div class="text-h6 font-weight-bold">{{ projectEndDate }}</div>
+          </DashboardSectionCard>
+
+          <DashboardSectionCard title="חברי צוות" body-class="px-3 pb-4">
+              <div v-if="team.length === 0" class="text-body-2 text-medium-emphasis px-2 py-4">
+                אין חברי צוות להצגה כרגע.
+              </div>
+              <v-list v-else class="bg-transparent py-0">
+                <v-list-item
+                  v-for="member in team"
+                  :key="member.name"
+                  class="team-row mx-2 my-1"
+                >
+                  <template #prepend>
+                    <v-avatar :color="member.color" variant="tonal" size="36" class="me-3">
+                      <span class="text-caption font-weight-bold">{{ member.initials }}</span>
+                    </v-avatar>
+                  </template>
+
+                  <v-list-item-title class="font-weight-medium">{{ member.name }}</v-list-item-title>
+                  <v-list-item-subtitle>{{ member.role }}</v-list-item-subtitle>
+
+                  <template #append>
+                    <v-chip :color="member.statusColor" size="x-small" variant="tonal">{{ member.status }}</v-chip>
+                  </template>
+                </v-list-item>
+              </v-list>
+          </DashboardSectionCard>
+        </v-col>
+      </v-row>
+    </template>
   </div>
 </template>
 
 <script setup>
-import { computed, onMounted, ref, watch } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
+import DashboardHero from '../components/dashboard/DashboardHero.vue';
+import DashboardSectionCard from '../components/dashboard/DashboardSectionCard.vue';
+import DashboardStatCard from '../components/dashboard/DashboardStatCard.vue';
 import { makeRequest } from '../plugins/api';
 
 const route = useRoute();
@@ -256,22 +284,56 @@ const phases = computed(() => tasksRaw.value
     color: Number(task.progress || 0) >= 100 ? 'success' : 'primary',
   })));
 
+const overallProgress = computed(() => {
+  if (tasksRaw.value.length === 0) {
+    return 0;
+  }
+
+  return Math.round(
+    tasksRaw.value.reduce((sum, task) => sum + Number(task.progress || 0), 0) / tasksRaw.value.length,
+  );
+});
+
+const openItemsCount = computed(() => tasksRaw.value.filter((task) => Number(task.progress || 0) < 100).length);
+
+const projectTitle = computed(() => project.value?.name || 'דשבורד פרויקט');
+
+const projectEndDate = computed(() => formatDate(project.value?.end_date));
+
 const stats = computed(() => {
   const endDate = project.value?.end_date ? new Date(project.value.end_date) : null;
   const today = new Date();
   const daysLeft = endDate ? Math.max(0, Math.ceil((endDate - today) / (1000 * 60 * 60 * 24))) : '-';
 
-  const progressAvg = tasksRaw.value.length
-    ? Math.round(tasksRaw.value.reduce((sum, task) => sum + Number(task.progress || 0), 0) / tasksRaw.value.length)
-    : 0;
-
-  const openItems = tasksRaw.value.filter((task) => Number(task.progress || 0) < 100).length;
-
   return [
-    { label: 'ימים לסיום', value: daysLeft, icon: 'mdi-calendar-clock', color: 'primary' },
-    { label: 'התקדמות', value: `${progressAvg}%`, icon: 'mdi-chart-line', color: 'success' },
-    { label: 'תקציב כולל', value: currency(project.value?.total_budget), icon: 'mdi-cash-multiple', color: 'warning' },
-    { label: 'פריטים פתוחים', value: openItems, icon: 'mdi-clipboard-check-outline', color: 'info' },
+    {
+      label: 'ימים לסיום',
+      value: daysLeft,
+      icon: 'mdi-calendar-clock',
+      color: 'primary',
+      description: 'עד תאריך היעד של הפרויקט',
+    },
+    {
+      label: 'התקדמות',
+      value: `${overallProgress.value}%`,
+      icon: 'mdi-chart-line',
+      color: 'success',
+      description: 'ממוצע התקדמות המשימות',
+    },
+    {
+      label: 'תקציב כולל',
+      value: currency(project.value?.total_budget),
+      icon: 'mdi-cash-multiple',
+      color: 'warning',
+      description: 'תקציב פרויקט מעודכן',
+    },
+    {
+      label: 'פריטים פתוחים',
+      value: openItemsCount.value,
+      icon: 'mdi-clipboard-check-outline',
+      color: 'info',
+      description: 'משימות שעדיין לא הושלמו',
+    },
   ];
 });
 
@@ -303,7 +365,32 @@ const loadProjectDashboard = async () => {
 };
 
 watch(() => route.params.id, loadProjectDashboard, { immediate: true });
-
-onMounted(loadProjectDashboard);
 </script>
+
+<style scoped>
+.project-dashboard {
+  position: relative;
+}
+
+.phase-row {
+  border: 1px solid rgba(var(--v-theme-divider), 0.65);
+  border-radius: 14px;
+  padding: 12px;
+  margin-bottom: 12px;
+}
+
+.team-row {
+  border: 1px solid rgba(var(--v-theme-divider), 0.7);
+  border-radius: 14px;
+}
+
+.tasks-table :deep(thead th) {
+  font-weight: 700;
+  color: rgba(var(--v-theme-text), 0.92);
+}
+
+.tasks-table :deep(tbody tr:hover) {
+  background: rgba(var(--v-theme-primary-lighten-2), 0.3);
+}
+</style>
 

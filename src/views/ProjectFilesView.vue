@@ -12,9 +12,7 @@
       </div>
     </div>
 
-    <v-alert v-if="errorMessage" type="error" variant="tonal" class="mb-4">
-      {{ errorMessage }}
-    </v-alert>
+    <AppStateError v-if="errorMessage" :message="errorMessage" @retry="loadFiles" />
     <v-alert v-if="successMessage" type="success" variant="tonal" class="mb-4">
       {{ successMessage }}
     </v-alert>
@@ -44,11 +42,9 @@
       </v-col>
     </v-row>
 
-    <div v-if="isLoading" class="py-8 d-flex justify-center">
-      <v-progress-circular indeterminate color="primary" />
-    </div>
+    <AppStateLoading v-if="isLoading" message="טוען קבצי פרויקט..." />
 
-    <v-row>
+    <v-row v-else>
       <v-col
         v-for="file in filteredFiles"
         :key="file.id"
@@ -88,10 +84,12 @@
         </v-card>
       </v-col>
 
-      <v-col v-if="!isLoading && filteredFiles.length === 0" cols="12">
-        <v-card rounded="xl" elevation="0" class="pa-8 text-center text-medium-emphasis">
-          אין קבצים להצגה
-        </v-card>
+      <v-col v-if="filteredFiles.length === 0" cols="12">
+        <AppStateEmpty
+          icon="mdi-folder-open-outline"
+          title="אין קבצים להצגה"
+          description="הוסיפו קובץ חדש או צרו תיקיה כדי להתחיל לנהל את קבצי הפרויקט."
+        />
       </v-col>
     </v-row>
 
@@ -129,8 +127,11 @@
 </template>
 
 <script setup>
-import { computed, reactive, ref, onMounted } from 'vue';
+import { computed, reactive, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
+import AppStateEmpty from '../components/state/AppStateEmpty.vue';
+import AppStateError from '../components/state/AppStateError.vue';
+import AppStateLoading from '../components/state/AppStateLoading.vue';
 import { makeRequest } from '../plugins/api';
 
 const route = useRoute();
@@ -379,5 +380,11 @@ const downloadFile = async (file) => {
   }
 };
 
-onMounted(loadFiles);
+watch(
+  () => route.params.id,
+  () => {
+    loadFiles();
+  },
+  { immediate: true },
+);
 </script>

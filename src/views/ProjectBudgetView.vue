@@ -38,13 +38,15 @@
 
     <v-card rounded="xl" elevation="0" class="pa-5">
       <div class="text-subtitle-1 font-weight-semibold mb-4">קטגוריות תקציב</div>
-      <v-alert v-if="loadError" type="error" variant="tonal" class="mb-4">
-        {{ loadError }}
-      </v-alert>
-      <div v-if="isLoading" class="py-6 d-flex justify-center">
-        <v-progress-circular indeterminate color="primary" />
-      </div>
-      <v-table density="comfortable">
+      <AppStateError v-if="loadError" :message="loadError" @retry="loadCategories" />
+      <AppStateLoading v-if="isLoading" message="טוען קטגוריות תקציב..." />
+      <AppStateEmpty
+        v-else-if="categories.length === 0"
+        icon="mdi-cash-multiple"
+        title="אין קטגוריות תקציב להצגה"
+        description="הוסיפו קטגוריה ראשונה כדי להתחיל לעקוב אחרי התקציב."
+      />
+      <v-table v-else density="comfortable">
         <thead>
           <tr>
             <th class="text-right">קטגוריה</th>
@@ -76,9 +78,6 @@
               <v-btn icon="mdi-delete-outline" variant="text" color="error" size="small" @click="removeCategory(row.id)" />
             </td>
           </tr>
-          <tr v-if="!isLoading && categories.length === 0">
-            <td colspan="6" class="text-center text-medium-emphasis py-4">אין קטגוריות תקציב עדיין.</td>
-          </tr>
         </tbody>
       </v-table>
     </v-card>
@@ -105,8 +104,11 @@
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref } from 'vue';
+import { computed, reactive, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
+import AppStateEmpty from '../components/state/AppStateEmpty.vue';
+import AppStateError from '../components/state/AppStateError.vue';
+import AppStateLoading from '../components/state/AppStateLoading.vue';
 import { makeRequest } from '../plugins/api';
 
 const route = useRoute();
@@ -257,5 +259,11 @@ const removeCategory = async (id) => {
   }
 };
 
-onMounted(loadCategories);
+watch(
+  () => route.params.id,
+  () => {
+    loadCategories();
+  },
+  { immediate: true },
+);
 </script>

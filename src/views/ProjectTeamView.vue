@@ -33,13 +33,15 @@
     </v-row>
 
     <v-card rounded="xl" elevation="0" class="pa-4">
-      <v-alert v-if="errorMessage" type="error" variant="tonal" class="mb-3">
-        {{ errorMessage }}
-      </v-alert>
-      <div v-if="isLoading" class="py-6 d-flex justify-center">
-        <v-progress-circular indeterminate color="primary" />
-      </div>
-      <v-table density="comfortable" hover>
+      <AppStateError v-if="errorMessage" :message="errorMessage" @retry="loadMembers" />
+      <AppStateLoading v-if="isLoading" message="טוען חברי צוות..." />
+      <AppStateEmpty
+        v-else-if="filteredMembers.length === 0"
+        icon="mdi-account-group-outline"
+        title="אין חברי צוות להצגה"
+        description="אפשר להזמין חבר צוות חדש או לשנות את תנאי הסינון."
+      />
+      <v-table v-else density="comfortable" hover>
         <thead>
           <tr>
             <th class="text-right">חבר צוות</th>
@@ -72,9 +74,6 @@
               <v-btn icon="mdi-delete-outline" variant="text" size="small" color="error" :loading="isSaving" @click="removeMember(member.id)" />
             </td>
           </tr>
-          <tr v-if="!isLoading && filteredMembers.length === 0">
-            <td colspan="4" class="text-center text-medium-emphasis py-6">אין חברי צוות להצגה</td>
-          </tr>
         </tbody>
       </v-table>
     </v-card>
@@ -95,8 +94,11 @@
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref } from 'vue';
+import { computed, reactive, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
+import AppStateEmpty from '../components/state/AppStateEmpty.vue';
+import AppStateError from '../components/state/AppStateError.vue';
+import AppStateLoading from '../components/state/AppStateLoading.vue';
 import { makeRequest } from '../plugins/api';
 
 const route = useRoute();
@@ -291,5 +293,11 @@ const removeMember = async (id) => {
   }
 };
 
-onMounted(loadMembers);
+watch(
+  () => route.params.id,
+  () => {
+    loadMembers();
+  },
+  { immediate: true },
+);
 </script>

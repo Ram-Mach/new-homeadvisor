@@ -24,6 +24,7 @@ const ProjectChatView = () => import('../views/ProjectChatView.vue');
 const ProjectFilesView = () => import('../views/ProjectFilesView.vue');
 const ProjectBoqView = () => import('../views/ProjectBoqView.vue');
 const ProjectBidsView = () => import('../views/ProjectBidsView.vue');
+const ProjectBidDetailsView = () => import('../views/ProjectBidDetailsView.vue');
 const ProjectSettingsView = () => import('../views/ProjectSettingsView.vue');
 const PublicBidProposalView = () => import('../views/PublicBidProposalView.vue');
 
@@ -147,6 +148,11 @@ const routes = [
         path: 'bids',
         name: 'project-bids',
         component: ProjectBidsView,
+      },
+      {
+        path: 'bids/:bidId',
+        name: 'project-bid-details',
+        component: ProjectBidDetailsView,
       },
       {
         path: 'settings',

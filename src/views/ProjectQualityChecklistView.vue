@@ -7,13 +7,16 @@
 
     <v-row>
       <v-col cols="12" md="8">
-        <v-alert v-if="errorMessage" type="error" variant="tonal" class="mb-3">
-          {{ errorMessage }}
-        </v-alert>
-        <div v-if="isLoading" class="py-8 d-flex justify-center">
-          <v-progress-circular indeterminate color="primary" />
-        </div>
-        <v-expansion-panels variant="accordion">
+        <AppStateError v-if="errorMessage" :message="errorMessage" @retry="loadChecklists" />
+        <AppStateLoading v-if="isLoading" message="טוען רשימות בדיקה..." />
+        <AppStateEmpty
+          v-else-if="checklistPhases.length === 0"
+          icon="mdi-clipboard-check-outline"
+          title="אין רשימות בדיקה להצגה"
+          description="טרם הוגדרו סעיפי בקרת איכות עבור הפרויקט."
+          class="mb-3"
+        />
+        <v-expansion-panels v-else variant="accordion">
           <v-expansion-panel
             v-for="phase in checklistPhases"
             :key="phase.id"
@@ -64,8 +67,11 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
+import AppStateEmpty from '../components/state/AppStateEmpty.vue';
+import AppStateError from '../components/state/AppStateError.vue';
+import AppStateLoading from '../components/state/AppStateLoading.vue';
 import { makeRequest } from '../plugins/api';
 
 const route = useRoute();
@@ -178,7 +184,13 @@ const onToggleItem = async (checklistId, item, nextValue) => {
   isSaving.value = false;
 };
 
-onMounted(loadChecklists);
+watch(
+  () => route.params.id,
+  () => {
+    loadChecklists();
+  },
+  { immediate: true },
+);
 
 const totalChecks = computed(() => checklistPhases.value
   .reduce((acc, phase) => acc + phase.items.length, 0));

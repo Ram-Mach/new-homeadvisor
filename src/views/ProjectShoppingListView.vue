@@ -8,18 +8,22 @@
       ניהול פריטים לרכישה לפי חומר לבן ושאר פריטי ביצוע
     </div>
 
-    <v-alert v-if="errorMessage" type="error" variant="tonal" class="mb-4">
-      {{ errorMessage }}
-    </v-alert>
+    <AppStateError v-if="errorMessage" :message="errorMessage" @retry="loadShoppingList" />
     <v-alert v-if="successMessage" type="success" variant="tonal" class="mb-4">
       {{ successMessage }}
     </v-alert>
 
-    <div v-if="isLoading" class="py-8 d-flex justify-center">
-      <v-progress-circular indeterminate color="primary" />
-    </div>
+    <AppStateLoading v-if="isLoading" message="טוען רשימת קניות..." />
 
-    <v-row>
+    <AppStateEmpty
+      v-else-if="lineItems.length === 0"
+      icon="mdi-cart-variant"
+      title="אין פריטי קנייה להצגה"
+      description="הוסיפו פריט חדש כדי להתחיל לבנות את רשימת הקניות לפרויקט."
+      class="mb-4"
+    />
+
+    <v-row v-else>
       <v-col cols="12" md="6">
         <v-card elevation="1" class="pa-4">
           <div class="d-flex align-center justify-space-between mb-3">
@@ -200,8 +204,11 @@
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref } from 'vue';
+import { computed, reactive, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
+import AppStateEmpty from '../components/state/AppStateEmpty.vue';
+import AppStateError from '../components/state/AppStateError.vue';
+import AppStateLoading from '../components/state/AppStateLoading.vue';
 import { makeRequest } from '../plugins/api';
 
 const route = useRoute();
@@ -492,5 +499,11 @@ const currency = (value) => new Intl.NumberFormat('he-IL', {
   maximumFractionDigits: 0,
 }).format(value);
 
-onMounted(loadShoppingList);
+watch(
+  () => route.params.id,
+  () => {
+    loadShoppingList();
+  },
+  { immediate: true },
+);
 </script>

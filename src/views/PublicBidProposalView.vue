@@ -148,9 +148,11 @@
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue';
 import { useRoute } from 'vue-router';
+import { useAuthStore } from '../stores/auth';
 import { makeRequest } from '../plugins/api';
 
 const route = useRoute();
+const authStore = useAuthStore();
 
 const project = ref(null);
 const prices = reactive({});
@@ -169,6 +171,25 @@ const scopeModuleName = ref('');
 
 const slug = computed(() => String(route.params.slug || route.params.token || '').trim());
 const scopeToken = computed(() => String(route.query.scope || '').trim());
+
+const hydrateBidIntoForm = (existingBid) => {
+  if (!existingBid) {
+    return;
+  }
+
+  contractorDetails.name = String(existingBid.contractor_name || contractorDetails.name || '').trim();
+  contractorDetails.email = String(existingBid.contractor_email || contractorDetails.email || '').trim();
+  contractorDetails.phone = String(existingBid.contractor_phone || contractorDetails.phone || '').trim();
+  contractorDetails.notes = String(existingBid.notes || '').trim();
+
+  const existingItems = Array.isArray(existingBid.items) ? existingBid.items : [];
+  existingItems.forEach((item) => {
+    const lineItemId = Number(item.project_line_item_id || 0);
+    if (lineItemId > 0) {
+      prices[lineItemId] = Number(item.unit_price || 0);
+    }
+  });
+};
 
 const lineItems = computed(() => {
   const rows = project.value?.project_line_items || project.value?.projectLineItems || [];
@@ -272,6 +293,9 @@ const loadPublicBidProject = async () => {
     lineItems.value.forEach((item) => {
       prices[item.id] = Number(prices[item.id] || 0);
     });
+
+    const existingBid = response?.meta?.existing_bid || null;
+    hydrateBidIntoForm(existingBid);
   } catch {
     errorMessage.value = 'טעינת המכרז נכשלה. בדקו את הקישור ונסו שוב.';
     project.value = null;
@@ -301,7 +325,19 @@ const onSubmitBid = async () => {
       ...(scopeToken.value ? { scope: scopeToken.value } : {}),
     };
 
-    await makeRequest(`/public-bids/${slug.value}`, payload, 'POST');
+    const response = await makeRequest(`/public-bids/${slug.value}`, payload, 'POST');
+
+    const sessionToken = response?.data?.token || null;
+    const sessionUser = response?.data?.user || null;
+
+    if (sessionToken && sessionUser) {
+      authStore.setAuthSession({
+        token: sessionToken,
+        user: sessionUser,
+      });
+    }
+
+    hydrateBidIntoForm(response?.data?.existing_bid || null);
     submitSuccess.value = true;
   } catch {
     errorMessage.value = 'שליחת ההצעה נכשלה. בדקו את הנתונים ונסו שוב.';

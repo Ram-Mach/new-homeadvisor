@@ -35,13 +35,16 @@
 
     <!-- Expenses table -->
     <v-card rounded="xl" elevation="0">
-      <v-alert v-if="errorMessage" type="error" variant="tonal" class="ma-4 mb-0">
-        {{ errorMessage }}
-      </v-alert>
-      <div v-if="isLoading" class="py-6 d-flex justify-center">
-        <v-progress-circular indeterminate color="primary" />
-      </div>
-      <v-table density="comfortable" hover>
+      <AppStateError v-if="errorMessage" :message="errorMessage" @retry="loadExpenses" />
+      <AppStateLoading v-if="isLoading" message="טוען הוצאות פרויקט..." />
+      <AppStateEmpty
+        v-else-if="filteredExpenses.length === 0"
+        icon="mdi-receipt-text-outline"
+        title="אין הוצאות להצגה"
+        description="לא נמצאו הוצאות שמתאימות לסינון הנוכחי."
+        class="ma-4"
+      />
+      <v-table v-else density="comfortable" hover>
         <thead>
           <tr>
             <th class="text-right">תיאור</th>
@@ -66,9 +69,6 @@
               <v-icon v-else size="18" color="error">mdi-file-remove-outline</v-icon>
             </td>
           </tr>
-          <tr v-if="!isLoading && filteredExpenses.length === 0">
-            <td colspan="6" class="text-center text-medium-emphasis py-6">אין הוצאות להצגה</td>
-          </tr>
         </tbody>
       </v-table>
     </v-card>
@@ -91,8 +91,11 @@
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref } from 'vue';
+import { computed, reactive, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
+import AppStateEmpty from '../components/state/AppStateEmpty.vue';
+import AppStateError from '../components/state/AppStateError.vue';
+import AppStateLoading from '../components/state/AppStateLoading.vue';
 import { makeRequest } from '../plugins/api';
 
 const route = useRoute();
@@ -221,5 +224,11 @@ const onAddExpense = async () => {
   }
 };
 
-onMounted(loadExpenses);
+watch(
+  () => route.params.id,
+  () => {
+    loadExpenses();
+  },
+  { immediate: true },
+);
 </script>

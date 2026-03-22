@@ -52,7 +52,7 @@
 </template>
 
 <script setup>
-import { onMounted, ref } from 'vue';
+import { ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import { useAuthStore } from '../stores/auth';
 import { makeRequest } from '../plugins/api';
@@ -183,5 +183,11 @@ const onSend = async () => {
   }
 };
 
-onMounted(loadMessages);
+watch(
+  () => route.params.id,
+  () => {
+    loadMessages();
+  },
+  { immediate: true },
+);
 </script>
